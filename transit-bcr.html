@@ -176,6 +176,31 @@ window.PRESETS = {
     ref: { R0:45, f0:1.50, H0:160, tWait0:5 },
   },
 };
+
+window.TBCR_IO = (function () {
+  const RANGES = {
+    R:[15,80], dt:[5,25], VOT:[8,40], alpha:[0.10,0.60], gamma:[0,0.50], K:[0.5,6.0],
+    H_train:[50,400], V:[1,10], c_op:[80,300], f:[0.5,5.0], lambda:[1.0,1.5],
+    eps_f:[-0.60,-0.10], eps_t:[-1.0,-0.30], avg_speed:[8,45], seats_per_vehicle:[80,250],
+    peak_hour_share:[0.08,0.30], peak_direction_share:[0.50,0.75], load_comfort:[0.5,1.0],
+    phi_crush:[1.2,2.5], service_span_hrs:[10,24],
+  };
+  function serializeState(params, ref) { return { version:1, params:{ ...params }, referencePoint:{ ...ref } }; }
+  function parseState(obj) {
+    const warnings = [], src = (obj && obj.params) || {}, params = {};
+    Object.keys(src).forEach(k => {
+      if (!(k in RANGES)) { warnings.push(`unknown key ignored: ${k}`); return; }
+      let v = src[k]; const [lo, hi] = RANGES[k];
+      if (typeof v !== 'number' || !isFinite(v)) { warnings.push(`non-numeric ${k} ignored`); return; }
+      if (v < lo) { warnings.push(`${k} ${v} clamped to ${lo}`); v = lo; }
+      if (v > hi) { warnings.push(`${k} ${v} clamped to ${hi}`); v = hi; }
+      params[k] = v;
+    });
+    const ref = (obj && obj.referencePoint) ? { ...obj.referencePoint } : null;
+    return { params, ref, warnings };
+  }
+  return { RANGES, serializeState, parseState };
+})();
 </script>
 
 <script id="tbcr-tests">
@@ -303,6 +328,19 @@ window.PRESETS = {
     T.ok('revenue-opt fare in range', rOpt.fareStar >= 0.5 && rOpt.fareStar <= 5.0);
     const fb = TBCR.optimizeFare(P.params, ref, 'fareboxTarget', { fareboxTarget:40 });
     T.ok('farebox target null or in-range', fb.fareStar === null || (fb.fareStar>=0.5 && fb.fareStar<=5.0));
+  }
+  // Task 8: JSON IO
+  {
+    const P = PRESETS.us_lrt;
+    const s = TBCR_IO.serializeState(P.params, P.ref);
+    T.eq('serialize version', s.version, 1);
+    const round = TBCR_IO.parseState(JSON.parse(JSON.stringify(s)));
+    T.eq('round-trip fare preserved', round.params.f, P.params.f, 1e-9);
+    T.ok('no warnings on clean input', round.warnings.length === 0);
+    const bad = TBCR_IO.parseState({ version:1, params:{ ...P.params, f:99, bogus:5 }, referencePoint:P.ref });
+    T.ok('out-of-range fare clamped', bad.params.f <= 5.0);
+    T.ok('warns on clamp', bad.warnings.some(w => w.includes('f ')));
+    T.ok('warns on unknown key', bad.warnings.some(w => w.includes('bogus')));
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
