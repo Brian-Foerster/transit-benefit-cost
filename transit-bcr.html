@@ -36,7 +36,20 @@
     const FRR = opCost > 0 ? (fareRev / opCost) * 100 : 0;
     return { annualizedCapital, opCost, fareRev, opNet, surplusOffset, netCost, mcpfDeadweight, netCostWithMCPF, FRR };
   }
-  root.TBCR = { CONST, crf, computeCosts };
+  function phi(load, params) {
+    const comfort = params.load_comfort, crush = params.phi_crush;
+    if (load <= comfort) return 1;
+    const slope = (crush - 1) / (1.5 - comfort);   // reach crush multiplier at load = 1.5
+    return Math.min(1 + slope * (load - comfort), crush);
+  }
+  function loadFactor(params, R) {
+    const span = params.service_span_hrs || 18;
+    const freqPeak = params.H_train / span;                                   // trains/hr
+    const capacityPeak = freqPeak * params.V * params.seats_per_vehicle;       // seats/hr
+    const peakHourRiders = R * 1000 * params.peak_hour_share * params.peak_direction_share;
+    return capacityPeak > 0 ? peakHourRiders / capacityPeak : 0;
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor };
 })(window);
 </script>
 
@@ -70,6 +83,19 @@
     T.ok('operating deficit', c.opNet < 0);
     T.eq('net cost ~90.0M', c.netCost, 86.7+3.3, 0.03);  // capital + |opNet| (24.3-21.0=3.3)
     T.eq('mcpf off at lambda=1', c.mcpfDeadweight, 0, 1e-9);
+  }
+  // Task 3: crowding
+  {
+    const p = { load_comfort:0.8, phi_crush:1.8 };
+    T.eq('phi below comfort = 1', TBCR.phi(0.5, p), 1, 1e-9);
+    T.eq('phi at comfort = 1', TBCR.phi(0.8, p), 1, 1e-9);
+    T.eq('phi at crush(1.5) = phi_crush', TBCR.phi(1.5, p), 1.8, 1e-9);
+    T.ok('phi monotonic', TBCR.phi(1.0,p) < TBCR.phi(1.2,p));
+    T.ok('phi capped at crush', TBCR.phi(3.0,p) <= 1.8 + 1e-9);
+    const pl = { H_train:150, V:3, seats_per_vehicle:150, peak_hour_share:0.17, peak_direction_share:0.60, service_span_hrs:18 };
+    const lf = TBCR.loadFactor(pl, 40);
+    T.ok('load factor positive', lf > 0);
+    T.ok('load factor rises with ridership', TBCR.loadFactor(pl, 80) > lf);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
