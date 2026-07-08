@@ -394,6 +394,21 @@ window.TBCR_IO = (function () {
     const s2 = TBCR_IO.serializeState(p1.params, p1.ref || P.ref);
     T.ok('round-trip idempotent', JSON.stringify(s1.params) === JSON.stringify(s2.params));
   }
+  // Task 12: consolidated regression
+  {
+    Object.keys(PRESETS).forEach(id=>{
+      const P=PRESETS[id]; const ap={ ...P.params, lambda:1, load_comfort:10 };
+      const ref=TBCR.calibrateRef(ap,P.ref); const w=TBCR.computeWelfare(ap,ref);
+      T.eq('R==R0 '+id, w.demand.R, P.ref.R0, 1e-5);
+      T.ok('finite BCR '+id, isFinite(w.BCR));
+      T.eq('phi==1 '+id, w.demand.phi, 1, 1e-9);
+    });
+    const anchorP={ ...PRESETS.us_lrt.params, lambda:1, load_comfort:10 };
+    const ref=TBCR.calibrateRef(anchorP,PRESETS.us_lrt.ref);
+    const w=TBCR.computeWelfare(anchorP,ref);
+    T.eq('baseline benefits 75.24M', w.B, 75.24, 0.02);
+    T.eq('baseline BCR 0.836', w.BCR, 0.8356, 0.005);
+  }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
