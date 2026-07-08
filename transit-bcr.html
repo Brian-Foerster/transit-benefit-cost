@@ -97,7 +97,29 @@
     const BCR = costs.netCostWithMCPF !== 0 ? B / costs.netCostWithMCPF : Infinity;
     return { demand, benefits, costs, B, netCostWithMCPF: costs.netCostWithMCPF, W, BCR, FRR: costs.FRR };
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare };
+  function optimizeFare(params, ref, objective, opts) {
+    const fMin = (opts && opts.fMin) ?? 0.5, fMax = (opts && opts.fMax) ?? 5.0;
+    const target = (opts && opts.fareboxTarget) ?? 40;
+    if (objective === 'fareboxTarget') {
+      const N = 200;
+      for (let i = 0; i <= N; i++) {
+        const f = fMin + (fMax - fMin) * i / N;
+        const w = computeWelfare({ ...params, f }, ref);
+        if (w.FRR >= target) return { fareStar: f, value: w.FRR, R: w.demand.R, W: w.W, BCR: w.BCR, FRR: w.FRR };
+      }
+      return { fareStar: null, value: null, R: null, W: null, BCR: null, FRR: null };
+    }
+    const score = (f) => { const w = computeWelfare({ ...params, f }, ref); return objective === 'revenue' ? w.costs.fareRev : w.W; };
+    const gr = (Math.sqrt(5) - 1) / 2;
+    let a = fMin, b = fMax, c = b - gr * (b - a), d = a + gr * (b - a), fc = score(c), fd = score(d);
+    for (let i = 0; i < 60 && Math.abs(b - a) > 1e-4; i++) {
+      if (fc < fd) { a = c; c = d; fc = fd; d = a + gr * (b - a); fd = score(d); }
+      else { b = d; d = c; fd = fc; c = b - gr * (b - a); fc = score(c); }
+    }
+    const fStar = (a + b) / 2, w = computeWelfare({ ...params, f: fStar }, ref);
+    return { fareStar: fStar, value: objective === 'revenue' ? w.costs.fareRev : w.W, R: w.demand.R, W: w.W, BCR: w.BCR, FRR: w.FRR };
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare };
 })(window);
 </script>
 
@@ -268,6 +290,20 @@ window.PRESETS = {
     const w = TBCR.computeWelfare(ap, ref);
     T.eq('pivot identity '+id, w.demand.R, P.ref.R0, 1e-5);
   });
+  // Task 7: fare optimization
+  {
+    const P = PRESETS.us_lrt;
+    const ref = TBCR.calibrateRef(P.params, P.ref);
+    const wOpt = TBCR.optimizeFare(P.params, ref, 'welfare', {});
+    T.ok('welfare-opt fare in range', wOpt.fareStar >= 0.5 && wOpt.fareStar <= 5.0);
+    const wAt = TBCR.computeWelfare({ ...P.params, f: wOpt.fareStar }, ref);
+    const wRef = TBCR.computeWelfare(P.params, ref);
+    T.ok('W(f*) >= W(f0)', wAt.W >= wRef.W - 1e-6);
+    const rOpt = TBCR.optimizeFare(P.params, ref, 'revenue', {});
+    T.ok('revenue-opt fare in range', rOpt.fareStar >= 0.5 && rOpt.fareStar <= 5.0);
+    const fb = TBCR.optimizeFare(P.params, ref, 'fareboxTarget', { fareboxTarget:40 });
+    T.ok('farebox target null or in-range', fb.fareStar === null || (fb.fareStar>=0.5 && fb.fareStar<=5.0));
+  }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
