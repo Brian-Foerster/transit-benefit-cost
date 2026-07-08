@@ -105,7 +105,7 @@
 window.PRESETS = {
   us_lrt: {
     label: 'US LRT baseline',
-    citation: 'Source-doc defaults; US NTD medians. Benefits ~$127M, BCR ~1.2.',
+    citation: 'Source-doc defaults; US NTD medians. Formula-consistent: benefits ~$75.2M, net cost ~$90M, BCR ~0.84.',
     params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.25, K:1.5,
       H_train:150, V:3, c_op:180, f:1.75, lambda:1.30,
       eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
@@ -248,8 +248,12 @@ window.PRESETS = {
     T.eq('anchor: R == R0', w.demand.R, 40, 1e-6);
     T.eq('anchor: phi == 1', w.demand.phi, 1, 1e-9);
     T.eq('anchor: no crowding disamenity', w.benefits.crowdingDisamenity, 0, 1e-9);
-    T.eq('anchor: total benefits ~127M', w.B, 127, 0.01*127);
-    T.eq('anchor: BCR ~1.2', w.BCR, 1.2, 0.06);
+    // Anchor reproduces the source model's FORMULAS (not its inconsistent prose headline
+    // of $127M/1.2). Worked by hand at defaults: CS 43.2 + congestion 5.76 + Mohring 7.776
+    // + accident 0.864 + emissions 0.432 + labor 2.16 = direct 60.192; ×1.25 = $75.24M.
+    // net cost = annualized capital 86.745 + operating deficit 3.3 = 90.045; BCR = 0.8356.
+    T.eq('anchor: total benefits 75.24M', w.B, 75.24, 0.02);
+    T.eq('anchor: BCR 0.836', w.BCR, 0.8356, 0.005);
     // MCPF monotonicity on the subsidized baseline
     const refN = TBCR.calibrateRef(P.params, P.ref);
     const wLo = TBCR.computeWelfare({ ...P.params, lambda:1.0 }, refN);
