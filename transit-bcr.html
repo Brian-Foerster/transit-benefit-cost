@@ -20,6 +20,8 @@
   button,select{padding:.35rem .6rem;font:inherit}
   #warn{color:var(--red);white-space:pre-wrap}
   #breakdown{border:1px solid #eee;border-radius:8px;padding:.75rem;background:#fafafa;font-size:.92rem}
+  #presetinfo{border-left:4px solid #2b6cb0;background:#f4f8fd;border-radius:6px;padding:.6rem .8rem;margin:.5rem 0;font-size:.93rem;line-height:1.45}
+  #presetinfo strong{color:#1a4a80}
   .optbar{border:1px solid #cdd6e0;background:#f2f6fb;border-radius:8px;padding:.6rem .75rem;margin:.6rem 0;display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .75rem}
   .optbar .optlabel{font-weight:600}
   .optbtns{display:flex;gap:.5rem;flex-wrap:wrap}
@@ -49,6 +51,7 @@
     <button id="btnExport">Export JSON</button>
     <button id="btnImport">Import JSON</button>
   </div>
+  <div id="presetinfo"></div>
   <div class="optbar">
     <span class="optlabel">Optimize fare (moves the fare slider automatically):</span>
     <div class="optbtns">
@@ -192,10 +195,15 @@
 </script>
 
 <script id="tbcr-presets">
+// Presets are internally consistent: ridership, service supply (train-hours,
+// vehicles, seats), capital, and fares all scaled to the same real project so
+// that capital and ridership move together. us_lrt is held fixed as the
+// regression anchor. "about" powers the on-screen explanation box.
 window.PRESETS = {
   us_lrt: {
     label: 'US LRT baseline',
-    citation: 'Source-doc defaults; US NTD medians. Anchor (lambda=1, phi=1): $75.2M / BCR 0.84. As shipped (lambda=1.30, crowded): B ~$40M / net ~$117M / BCR ~0.34.',
+    citation: 'Source-doc defaults; US NTD medians. Anchor (lambda=1, phi=1): $75.2M / BCR 0.84. As shipped (lambda=1.30, crowded): BCR ~0.34.',
+    about: 'The reference case — a ~10 km light-rail line in a ~1M metro, moderate on every dimension (40k riders, $1.5B, $38k per daily rider). Ships with MCPF (1.30) and crowding on, so it reads a marginal BCR ~0.34. Set MCPF to 1.0 and lift the crowding threshold to recover the source model’s BCR 0.84 anchor. This is the preset the whole model is calibrated against.',
     params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.25, K:1.5,
       H_train:150, V:3, c_op:180, f:1.75, lambda:1.30,
       eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
@@ -205,51 +213,55 @@ window.PRESETS = {
   },
   elizabeth_line: {
     label: 'Elizabeth Line (London)',
-    citation: 'Centre for Cities agglomeration 24%; congestion-priced city (lower congestion externality).',
-    params: { R:60, dt:15, VOT:25, alpha:0.20, gamma:0.24, K:5.5,
-      H_train:280, V:9, c_op:220, f:3.00, lambda:1.30,
-      eps_f:-0.30, eps_t:-0.55, avg_speed:33, seats_per_vehicle:200,
-      peak_hour_share:0.18, peak_direction_share:0.62, load_comfort:0.80,
+    citation: 'Crossrail ~£19B; ~600k trips/day design capacity; Centre for Cities high agglomeration; congestion-priced city.',
+    about: 'The megaproject that scale justifies — enormous capital ($24B) but enormous ridership (~600k/day), big door-to-door time savings, and strong agglomeration (35%) in a congestion-priced city. High-frequency 9-car trains keep loads near capacity, and fares roughly cover operating cost, so capital dominates the ledger. BCR ~1.5: costly, but the ridership and productivity gains carry it.',
+    params: { R:600, dt:20, VOT:28, alpha:0.20, gamma:0.35, K:24,
+      H_train:530, V:9, c_op:320, f:3.00, lambda:1.30,
+      eps_f:-0.30, eps_t:-0.55, avg_speed:33, seats_per_vehicle:250,
+      peak_hour_share:0.17, peak_direction_share:0.62, load_comfort:0.85,
       phi_crush:1.8, service_span_hrs:19 },
-    ref: { R0:60, f0:3.00, H0:280, tWait0:3 },
+    ref: { R0:600, f0:3.00, H0:530, tWait0:3 },
   },
   stockholm_tbana: {
     label: 'Stockholm T-bana',
-    citation: 'Borjesson et al. 2020: agglomeration ~48%, BCR ~6.',
-    params: { R:50, dt:14, VOT:22, alpha:0.35, gamma:0.48, K:1.2,
-      H_train:200, V:6, c_op:150, f:3.50, lambda:1.30,
-      eps_f:-0.30, eps_t:-0.60, avg_speed:22, seats_per_vehicle:150,
+    citation: 'Borjesson et al. 2020: wider economic impacts ~48% of user benefits; high farebox recovery.',
+    about: 'The flagship winner — efficient capital (~$23k per daily rider), high farebox recovery, comfortable loads (no crush), and the highest agglomeration uplift here (48%, per Borjesson et al.). An operating surplus offsets part of the capital. BCR ~2.5: the case where urban rail clearly pays for itself.',
+    params: { R:130, dt:14, VOT:24, alpha:0.35, gamma:0.48, K:3.0,
+      H_train:340, V:6, c_op:160, f:3.50, lambda:1.30,
+      eps_f:-0.30, eps_t:-0.60, avg_speed:22, seats_per_vehicle:160,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
-      phi_crush:1.8, service_span_hrs:18 },
-    ref: { R0:50, f0:3.50, H0:200, tWait0:4 },
+      phi_crush:1.8, service_span_hrs:19 },
+    ref: { R0:130, f0:3.50, H0:340, tWait0:4 },
   },
   high_cost_us: {
     label: 'High-cost US project',
-    citation: 'US megaproject capital $4.5B; teaching case (BCR < 1).',
-    params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.10, K:4.5,
-      H_train:150, V:3, c_op:250, f:1.75, lambda:1.30,
-      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
+    citation: 'US megaproject cost profile (~$80k per daily rider); agglomeration excluded per FTA practice.',
+    about: 'The cost-disease cautionary tale — megaproject capital ($6B, ~$80k per daily rider) on a corridor whose ridership (75k) and benefits are ordinary, with agglomeration ignored (10%, standard US appraisal). BCR ~0.2: the money went into construction, not outcomes. Levy’s central point in one preset — cost control matters far more than the funding mechanism.',
+    params: { R:75, dt:12, VOT:20, alpha:0.30, gamma:0.10, K:6.0,
+      H_train:220, V:4, c_op:260, f:2.00, lambda:1.30,
+      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:170,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18 },
-    ref: { R0:40, f0:1.75, H0:150, tWait0:5 },
+    ref: { R0:75, f0:2.00, H0:220, tWait0:5 },
   },
   low_cost_intl: {
     label: 'Low-cost international',
-    citation: 'International best-practice LRT capital ~$1.0B/10km.',
-    params: { R:45, dt:12, VOT:16, alpha:0.30, gamma:0.25, K:1.0,
-      H_train:160, V:3, c_op:120, f:1.50, lambda:1.30,
-      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
+    citation: 'International best-practice LRT (~$1.2B/10km, ~$17k per daily rider); lean operations.',
+    about: 'International best practice — cheap capital (~$1.2B, ~$17k per daily rider), lean operations near break-even, modest fares. Nothing spectacular on any single axis, but the efficiency clears BCR > 1 (~1.24). The quiet success: get costs right and a plain project still passes.',
+    params: { R:70, dt:12, VOT:16, alpha:0.30, gamma:0.25, K:1.2,
+      H_train:240, V:4, c_op:110, f:1.50, lambda:1.30,
+      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:160,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18 },
-    ref: { R0:45, f0:1.50, H0:160, tWait0:5 },
+    ref: { R0:70, f0:1.50, H0:240, tWait0:5 },
   },
 };
 
 window.TBCR_IO = (function () {
   const RANGES = {
-    R:[15,80], dt:[5,25], VOT:[8,40], alpha:[0.10,0.60], gamma:[0,0.50], K:[0.5,6.0],
-    H_train:[50,400], V:[1,10], c_op:[80,300], f:[0.5,5.0], lambda:[1.0,1.5],
-    eps_f:[-0.60,-0.10], eps_t:[-1.0,-0.30], avg_speed:[8,45], seats_per_vehicle:[80,250],
+    R:[10,800], dt:[5,25], VOT:[8,40], alpha:[0.10,0.60], gamma:[0,0.50], K:[0.3,30],
+    H_train:[50,1200], V:[1,12], c_op:[80,400], f:[0.5,5.0], lambda:[1.0,1.5],
+    eps_f:[-0.60,-0.10], eps_t:[-1.0,-0.30], avg_speed:[8,45], seats_per_vehicle:[80,300],
     peak_hour_share:[0.08,0.30], peak_direction_share:[0.50,0.75], load_comfort:[0.5,1.0],
     phi_crush:[1.2,2.5], service_span_hrs:[10,24],
   };
@@ -445,24 +457,24 @@ window.TBCR_IO = (function () {
 if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')) {
   const SLIDERS = {
     grpDemand: [
-      ['R','Daily ridership (000s)',15,80,1],['f','Average fare ($)',0.5,5,0.05],
+      ['R','Daily ridership (000s)',10,800,5],['f','Average fare ($)',0.5,5,0.05],
       ['dt','Time saved/trip (min)',5,25,0.5],['VOT','Value of time ($/hr)',8,40,1],
       ['alpha','Car-diverted share',0.10,0.60,0.01],['gamma','Agglomeration uplift',0,0.50,0.01],
     ],
     grpService: [
-      ['K','Capital cost ($B)',0.5,6,0.1],['H_train','Daily train-hours',50,400,5],
-      ['V','Vehicles per train',1,10,1],['c_op','Op cost/veh-hr ($)',80,300,5],
+      ['K','Capital cost ($B)',0.3,30,0.1],['H_train','Daily train-hours',50,1200,10],
+      ['V','Vehicles per train',1,12,1],['c_op','Op cost/veh-hr ($)',80,400,5],
       ['avg_speed','Avg speed (mph)',8,45,1],['service_span_hrs','Service span (hrs)',10,24,1],
     ],
     grpBehavior: [
       ['eps_f','Fare elasticity',-0.60,-0.10,0.01],['eps_t','Time elasticity',-1.0,-0.30,0.01],
-      ['lambda','MCPF (shadow price)',1.0,1.5,0.05],['seats_per_vehicle','Seats/vehicle',80,250,10],
+      ['lambda','MCPF (shadow price)',1.0,1.5,0.05],['seats_per_vehicle','Seats/vehicle',80,300,10],
       ['peak_hour_share','Peak-hour share',0.08,0.30,0.01],['phi_crush','Crush crowding mult.',1.2,2.5,0.1],
     ],
   };
   const state = { params:null, ref:null, lastOpt:null, selectedOpt:'welfare' };
   const $ = id => document.getElementById(id);
-  const fmtM = x => (x>=0?'$':'-$') + Math.abs(x).toFixed(1) + 'M';
+  const fmtM = x => (x<0?'-':'') + (Math.abs(x)>=1000 ? '$'+(Math.abs(x)/1000).toFixed(2)+'B' : '$'+Math.abs(x).toFixed(1)+'M');
 
   function buildSliders(){
     for (const grp in SLIDERS){
@@ -490,6 +502,8 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     const P = PRESETS[id];
     state.params = { ...P.params };
     state.ref = TBCR.calibrateRef(P.params, P.ref);
+    const info = $('presetinfo');
+    if (info) info.innerHTML = `<strong>${P.label}.</strong> ${P.about || ''}`;
     syncInputsFromParams(); render();
   }
   function renderBreakdown(w){
