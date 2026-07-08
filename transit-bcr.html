@@ -49,7 +49,26 @@
     const peakHourRiders = R * 1000 * params.peak_hour_share * params.peak_direction_share;
     return capacityPeak > 0 ? peakHourRiders / capacityPeak : 0;
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor };
+  function computeDemand(params, ref) {
+    const tIvt = (CONST.TRIP_LENGTH_MI / params.avg_speed) * 60;
+    const tWait = ref.tWait0 * (ref.H0 / params.H_train);
+    let R = ref.R0, load = 0, ph = 1, tGen = tIvt + tWait;
+    for (let i = 0; i < 30; i++) {
+      load = loadFactor(params, R);
+      ph = phi(load, params);
+      tGen = ph * tIvt + tWait;
+      const tGen0 = (ref.tGen0 == null) ? tGen : ref.tGen0;
+      const Rnew = ref.R0 * Math.pow(params.f / ref.f0, params.eps_f) * Math.pow(tGen / tGen0, params.eps_t);
+      const Rnext = 0.5 * R + 0.5 * Rnew;
+      if (Math.abs(Rnext - R) < 1e-7) { R = Rnext; break; }
+      R = Rnext;
+    }
+    load = loadFactor(params, R); ph = phi(load, params);
+    tGen = ph * tIvt + tWait;
+    const GC = params.f + (params.VOT / 60) * tGen;
+    return { R, load, phi: ph, tWait, tIvt, tGen, GC };
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand };
 })(window);
 </script>
 
@@ -96,6 +115,19 @@
     const lf = TBCR.loadFactor(pl, 40);
     T.ok('load factor positive', lf > 0);
     T.ok('load factor rises with ridership', TBCR.loadFactor(pl, 80) > lf);
+  }
+  // Task 4: endogenous demand
+  {
+    const base = { f:1.75, H_train:150, VOT:18, eps_f:-0.35, eps_t:-0.60, avg_speed:20,
+                   seats_per_vehicle:150, peak_hour_share:0.17, peak_direction_share:0.60,
+                   load_comfort:0.80, phi_crush:1.8, service_span_hrs:18 };
+    const refCal = { R0:40, f0:1.75, H0:150, tWait0:5, tGen0:null };
+    const cal = TBCR.computeDemand(base, refCal);
+    const ref = { ...refCal, tGen0: cal.tGen };
+    const atRef = TBCR.computeDemand(base, ref);
+    T.eq('pivot identity: R==R0 at reference', atRef.R, 40, 1e-6);
+    T.ok('higher fare lowers ridership', TBCR.computeDemand({...base, f:3.5}, ref).R < 40);
+    T.ok('more train-hours raises ridership', TBCR.computeDemand({...base, H_train:300}, ref).R > 40);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
