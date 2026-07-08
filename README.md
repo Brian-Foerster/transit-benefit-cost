@@ -34,14 +34,24 @@ Export copies/downloads a `{version, params, referencePoint}` object. Import par
 to valid ranges, and warns on out-of-range or unknown fields. This is how you feed parameters from an
 outside ridership model.
 
-## Anchor
+## Anchor vs. as-shipped output
 
-At each preset's reference point with λ=1 and φ=1 (comfort threshold lifted), endogenous ridership
-equals the reference ridership, and the US-LRT baseline reproduces the original model's **formulas**:
-~$75.2M benefits, ~$90M net cost, ~0.84 BCR. (The source doc's prose headline of $127M/1.2 is
-inconsistent with its own equations; we reproduce the equations.) In normal use (default
-`load_comfort=0.8`) benefits sit modestly below the anchor value because of the crowding disamenity —
-intended behavior, not a discrepancy.
+**Anchor (a correctness check, not the default view):** with the second-best corrections switched
+off — `λ=1` and `φ=1` (comfort threshold lifted) — endogenous ridership equals the reference
+ridership and the US-LRT baseline reproduces the original model's **formulas** exactly: **~$75.2M
+benefits, ~$90M net cost, BCR ~0.84**. (The source doc's prose headline of $127M / BCR 1.2 is
+internally inconsistent with its own equations; we reproduce the equations. See the spec's anchor
+note.)
+
+**As shipped (what the cards actually show):** the presets ship with the corrections **on**
+(`λ=1.30` MCPF, `load_comfort=0.80` crowding), so the numbers on screen are lower than the anchor —
+this is the point of the second-best additions, not a discrepancy. For the US-LRT preset at its
+defaults the widget shows **B ≈ $39.7M, net cost ≈ $117.1M, BCR ≈ 0.34**: the crowding disamenity
+removes ~$28M of benefit (peak load ≈1.09 → φ≈1.33) and the MCPF shadow price adds ~$27M of
+deadweight to the subsidy. That is roughly half the anchor benefit and a third higher cost — a large,
+deliberate movement, not a modest one. Turn MCPF to 1.0 and lift the comfort threshold and you return
+to the anchor. Among the shipped presets only **Stockholm T-bana** clears BCR > 1 (≈1.69) at its
+defaults.
 
 ## Not modeled
 

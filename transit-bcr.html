@@ -122,6 +122,8 @@
     const emissions  = (Tcar * CONST.TRIP_LENGTH_MI * CONST.EMISSIONS_PER_MI) / 1e6;
     const mohring = CS * CONST.MOHRING_FACTOR;
     const labor   = CS * CONST.LABOR_FACTOR;
+    // Crowding enters twice by design (demand suppression via tGen in computeDemand, AND this
+    // disamenity term); not double-counted at the reference where GC==GC0 makes the CS term zero. See spec 3.3.
     const crowdingDisamenity = -((params.VOT / 60) * (demand.phi - 1) * demand.tIvt * (R * 1000 * D)) / 1e6;
     const direct = CS + congestion + mohring + accident + emissions + labor + crowdingDisamenity;
     const agglomeration = direct * params.gamma;
@@ -171,7 +173,7 @@
 window.PRESETS = {
   us_lrt: {
     label: 'US LRT baseline',
-    citation: 'Source-doc defaults; US NTD medians. Formula-consistent: benefits ~$75.2M, net cost ~$90M, BCR ~0.84.',
+    citation: 'Source-doc defaults; US NTD medians. Anchor (lambda=1, phi=1): $75.2M / BCR 0.84. As shipped (lambda=1.30, crowded): B ~$40M / net ~$117M / BCR ~0.34.',
     params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.25, K:1.5,
       H_train:150, V:3, c_op:180, f:1.75, lambda:1.30,
       eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
@@ -499,7 +501,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   window.__WIDGET = { render, loadPreset, get state(){ return state; }, syncInputsFromParams };
   function doExport(){
     const text = JSON.stringify(TBCR_IO.serializeState(state.params, state.ref), null, 2);
-    if (navigator.clipboard) navigator.clipboard.writeText(text);
+    if (navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));
     a.download='transit-bcr-scenario.json'; a.click();
@@ -510,6 +512,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     const { params, ref, warnings } = TBCR_IO.parseState(obj);
     Object.assign(state.params, params);
     if (ref && ref.R0!=null) state.ref = TBCR.calibrateRef(state.params, ref);
+    else warnings.push('no referencePoint in import — keeping current reference (pivot measured against the existing baseline)');
     $('warn').textContent = warnings.join('\n');
     syncInputsFromParams(); render();
   }
