@@ -144,7 +144,12 @@
   function computeBenefits(params, demand, ref) {
     const D = CONST.OPERATING_DAYS, R = demand.R;
     const CS0 = ref.R0 * 1000 * D * (params.dt / 60) * params.VOT;
-    const CS = (CS0 - 0.5 * (ref.R0 + R) * 1000 * D * (demand.GC - ref.GC0)) / 1e6;
+    // Reference generalized cost must be monetized at the CURRENT value of time, not the
+    // value frozen at preset-load: VOT is a valuation, not a price, so the reference and
+    // current points share it. Using the stored ref.GC0 (frozen VOT) makes rising VOT
+    // spuriously inflate (GC - GC0) and drive CS negative. Rebuild it from f0 and tGen0.
+    const GC0 = ref.f0 + (params.VOT / 60) * ref.tGen0;
+    const CS = (CS0 - 0.5 * (ref.R0 + R) * 1000 * D * (demand.GC - GC0)) / 1e6;
     const Tcar = R * 1000 * D * params.alpha;
     const congestion = (Tcar * CONST.TRIP_LENGTH_MI * CONST.CONGESTION_PER_MI) / 1e6;
     const accident   = (Tcar * CONST.TRIP_LENGTH_MI * CONST.ACCIDENT_PER_MI) / 1e6;
@@ -448,6 +453,17 @@ window.TBCR_IO = (function () {
     const w=TBCR.computeWelfare(anchorP,ref);
     T.eq('baseline benefits 75.24M', w.B, 75.24, 0.02);
     T.eq('baseline BCR 0.836', w.BCR, 0.8356, 0.005);
+  }
+  // VOT monotonicity (regression: rising value of time must RAISE benefits, not lower them —
+  // guards the CS two-baseline formula against re-freezing GC0 at the calibration VOT)
+  {
+    const P = PRESETS.us_lrt;
+    const ref = TBCR.calibrateRef(P.params, P.ref);
+    const lo = TBCR.computeWelfare({ ...P.params, VOT: 12 }, ref);
+    const hi = TBCR.computeWelfare({ ...P.params, VOT: 36 }, ref);
+    T.ok('higher VOT raises total benefits', hi.B > lo.B);
+    T.ok('higher VOT raises consumer surplus', hi.benefits.CS > lo.benefits.CS);
+    T.ok('CS stays positive at high VOT', hi.benefits.CS > 0);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
