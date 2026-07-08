@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transit Benefit-Cost Model (Expanded)</title>
+<style>
+  :root { --green:#178a3a; --amber:#c98a00; --red:#c02626; }
+  body{font:15px/1.5 system-ui,Segoe UI,Arial,sans-serif;max-width:1100px;margin:1rem auto;padding:0 1rem;color:#1a1a1a}
+  #out{font:13px/1.45 monospace;white-space:pre-wrap;margin:1rem 0}
+  #out .pass{color:var(--green)} #out .fail{color:var(--red);font-weight:700}
+</style></head>
+<body>
+<div id="out"></div>
+
+<script id="tbcr-engine">
+(function (root) {
+  const CONST = {
+    TRIP_LENGTH_MI: 8, OPERATING_DAYS: 300, DISCOUNT_RATE: 0.04, ASSET_LIFE_YEARS: 30,
+    CONGESTION_PER_MI: 0.20, ACCIDENT_PER_MI: 0.03, EMISSIONS_PER_MI: 0.015,
+    MOHRING_FACTOR: 0.18, LABOR_FACTOR: 0.05,
+  };
+  root.TBCR = { CONST };
+})(window);
+</script>
+
+<script id="tbcr-tests">
+(function () {
+  const RUN = (typeof location === 'undefined') || /[?&]test=1/.test(location.search);
+  if (!RUN) return;
+  const out = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('out') : null;
+  let passed = 0, failed = 0;
+  function emit(ok, msg) {
+    if (ok) passed++; else failed++;
+    const text = (ok ? 'PASS ' : 'FAIL ') + msg;
+    if (out) { const d = document.createElement('div'); d.className = ok ? 'pass' : 'fail'; d.textContent = text; out.appendChild(d); }
+    else { console.log(text); }
+  }
+  const T = {
+    ok(name, cond) { emit(!!cond, name); },
+    eq(name, a, e, tol = 1e-9) { const ok = Math.abs(a - e) <= tol * (Math.abs(e) || 1) + tol; emit(ok, ok ? name : `${name}: got ${a}, want ${e}`); },
+  };
+  // ---- TESTS ----
+  T.ok('engine loaded', typeof TBCR === 'object');
+  T.eq('operating days const', TBCR.CONST.OPERATING_DAYS, 300);
+  // ---- END TESTS ----
+  globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
+  const summary = `${passed} passed, ${failed} failed`;
+  if (out) { const d = document.createElement('div'); d.className = failed ? 'fail' : 'pass'; d.textContent = summary; out.appendChild(d); }
+  else { console.log(summary); }
+})();
+</script>
+</body></html>
