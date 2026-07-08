@@ -18,7 +18,9 @@
   button,select{padding:.35rem .6rem;font:inherit}
   #warn{color:var(--red);white-space:pre-wrap}
   #breakdown{border:1px solid #eee;border-radius:8px;padding:.75rem;background:#fafafa;font-size:.92rem}
-</style></head>
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
 <body>
 <div id="out"></div>
 <div id="app">
@@ -43,6 +45,13 @@
   <h2>Demand &amp; fare</h2><div class="sliders" id="grpDemand"></div>
   <h2>Service &amp; cost</h2><div class="sliders" id="grpService"></div>
   <h2>Behavioral &amp; second-best</h2><div class="sliders" id="grpBehavior"></div>
+  <h2>Benefits vs. cost</h2>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <canvas id="chBenefit" height="140"></canvas>
+    <canvas id="chCost" height="140"></canvas>
+    <canvas id="chDemand" height="140"></canvas>
+    <canvas id="chWelfare" height="140"></canvas>
+  </div>
   <h2>Breakdown</h2><div id="breakdown"></div>
 </div>
 
@@ -509,6 +518,49 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   $('btnSnap').addEventListener('click', doSnap);
   document.querySelectorAll('[data-opt]').forEach(b=> b.addEventListener('click', ()=>runOptimize(b.dataset.opt)));
   buildSliders(); initPresets(); loadPreset('us_lrt');
+}
+</script>
+
+<script id="tbcr-charts">
+if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '') && typeof Chart !== 'undefined') {
+  const $ = id => document.getElementById(id);
+  let charts = null;
+  function init(){
+    charts = {
+      benefit: new Chart($('chBenefit'), { type:'bar', data:{labels:['Benefits'],datasets:[]},
+        options:{indexAxis:'y',scales:{x:{stacked:true},y:{stacked:true}},plugins:{title:{display:true,text:'Annual benefits ($M)'}}} }),
+      cost: new Chart($('chCost'), { type:'bar', data:{labels:['Cost'],datasets:[]},
+        options:{indexAxis:'y',scales:{x:{stacked:true},y:{stacked:true}},plugins:{title:{display:true,text:'Annual cost ($M)'}}} }),
+      demand: new Chart($('chDemand'), { type:'line', data:{labels:[],datasets:[]},
+        options:{plugins:{title:{display:true,text:'Demand curve: ridership vs fare'}}} }),
+      welfare: new Chart($('chWelfare'), { type:'line', data:{labels:[],datasets:[]},
+        options:{plugins:{title:{display:true,text:'Welfare vs fare'}}} }),
+    };
+  }
+  window.__updateCharts = function(w){
+    if (!charts) init();
+    const b=w.benefits, c=w.costs;
+    charts.benefit.data.datasets = [
+      {label:'CS',data:[b.CS]},{label:'Congestion',data:[b.congestion]},{label:'Mohring',data:[b.mohring]},
+      {label:'Accident',data:[b.accident]},{label:'Emissions',data:[b.emissions]},{label:'Labor',data:[b.labor]},
+      {label:'Crowding',data:[b.crowdingDisamenity]},{label:'Agglomeration',data:[b.agglomeration]},
+    ]; charts.benefit.update();
+    charts.cost.data.datasets = [
+      {label:'Annualized capital',data:[c.annualizedCapital]},
+      {label:'Operating deficit',data:[Math.max(-c.opNet,0)]},
+      {label:'MCPF deadweight',data:[c.mcpfDeadweight]},
+      {label:'Surplus offset',data:[-c.surplusOffset]},
+    ]; charts.cost.update();
+    const st = window.__WIDGET.state, fs=[], Rs=[], Ws=[];
+    for (let f=0.5; f<=5.0001; f+=0.1){
+      const ww = TBCR.computeWelfare({ ...st.params, f }, st.ref);
+      fs.push(f.toFixed(2)); Rs.push(ww.demand.R); Ws.push(ww.W);
+    }
+    charts.demand.data.labels=fs; charts.demand.data.datasets=[{label:'Ridership (000s)',data:Rs,pointRadius:0}]; charts.demand.update();
+    charts.welfare.data.labels=fs; charts.welfare.data.datasets=[{label:'Welfare ($M)',data:Ws,pointRadius:0}]; charts.welfare.update();
+  };
+  // trigger an initial paint now that the hook exists
+  if (window.__WIDGET) window.__WIDGET.render();
 }
 </script>
 </body></html>
