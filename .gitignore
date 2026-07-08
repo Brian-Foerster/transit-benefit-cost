@@ -1,0 +1,4 @@
+# Subagent-driven-development build scratch (briefs, agent reports, review diffs, ledger)
+.superpowers/
+# Local editor/preview config
+.claude/
