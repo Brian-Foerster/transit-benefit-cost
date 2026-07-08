@@ -68,7 +68,23 @@
     const GC = params.f + (params.VOT / 60) * tGen;
     return { R, load, phi: ph, tWait, tIvt, tGen, GC };
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand };
+  function computeBenefits(params, demand, ref) {
+    const D = CONST.OPERATING_DAYS, R = demand.R;
+    const CS0 = ref.R0 * 1000 * D * (params.dt / 60) * params.VOT;
+    const CS = (CS0 - 0.5 * (ref.R0 + R) * 1000 * D * (demand.GC - ref.GC0)) / 1e6;
+    const Tcar = R * 1000 * D * params.alpha;
+    const congestion = (Tcar * CONST.TRIP_LENGTH_MI * CONST.CONGESTION_PER_MI) / 1e6;
+    const accident   = (Tcar * CONST.TRIP_LENGTH_MI * CONST.ACCIDENT_PER_MI) / 1e6;
+    const emissions  = (Tcar * CONST.TRIP_LENGTH_MI * CONST.EMISSIONS_PER_MI) / 1e6;
+    const mohring = CS * CONST.MOHRING_FACTOR;
+    const labor   = CS * CONST.LABOR_FACTOR;
+    const crowdingDisamenity = -((params.VOT / 60) * (demand.phi - 1) * demand.tIvt * (R * 1000 * D)) / 1e6;
+    const direct = CS + congestion + mohring + accident + emissions + labor + crowdingDisamenity;
+    const agglomeration = direct * params.gamma;
+    const total = direct * (1 + params.gamma);
+    return { CS, congestion, mohring, accident, emissions, labor, crowdingDisamenity, direct, agglomeration, total };
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits };
 })(window);
 </script>
 
@@ -128,6 +144,30 @@
     T.eq('pivot identity: R==R0 at reference', atRef.R, 40, 1e-6);
     T.ok('higher fare lowers ridership', TBCR.computeDemand({...base, f:3.5}, ref).R < 40);
     T.ok('more train-hours raises ridership', TBCR.computeDemand({...base, H_train:300}, ref).R > 40);
+  }
+  // Task 5: benefits
+  {
+    // load_comfort:10 forces phi=1 to isolate CS/agglomeration math from crowding.
+    const base = { f:1.75, H_train:150, VOT:18, eps_f:-0.35, eps_t:-0.60, avg_speed:20,
+                   seats_per_vehicle:150, peak_hour_share:0.17, peak_direction_share:0.60,
+                   load_comfort:10, phi_crush:1.8, service_span_hrs:18,
+                   dt:12, alpha:0.30, gamma:0.25, V:3 };
+    const refCal = { R0:40, f0:1.75, H0:150, tWait0:5, tGen0:null };
+    const cal = TBCR.computeDemand(base, refCal);
+    const ref = { ...refCal, tGen0: cal.tGen, GC0: cal.GC };
+    const d = TBCR.computeDemand(base, ref);
+    const b = TBCR.computeBenefits(base, d, ref);
+    // CS0 = 40k*300days*(12/60)h*$18 = $43.2M (matches original model)
+    T.eq('CS baseline 43.2M', b.CS, 40*1000*300*(12/60)*18/1e6, 1e-6);
+    T.eq('no crowding disamenity at phi=1', b.crowdingDisamenity, 0, 1e-9);
+    T.ok('total > direct (agglomeration adds)', b.total > b.direct);
+    T.eq('total = direct*(1+gamma)', b.total, b.direct*1.25, 1e-9);
+    // crowding disamenity turns negative once load exceeds comfort
+    const crowded = { ...base, load_comfort:0.80 };
+    const refC = { ...refCal, tGen0: cal.tGen, GC0: cal.GC };
+    const dC = TBCR.computeDemand(crowded, refC);
+    const bC = TBCR.computeBenefits(crowded, dC, refC);
+    T.ok('crowding disamenity negative when phi>1', dC.phi > 1 && bC.crowdingDisamenity < 0);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
