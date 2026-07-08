@@ -377,6 +377,14 @@ window.TBCR_IO = (function () {
     T.ok('warns on clamp', bad.warnings.some(w => w.includes('f ')));
     T.ok('warns on unknown key', bad.warnings.some(w => w.includes('bogus')));
   }
+  // Task 10: export/import idempotent
+  {
+    const P = PRESETS.us_lrt;
+    const s1 = TBCR_IO.serializeState(P.params, P.ref);
+    const p1 = TBCR_IO.parseState(s1);
+    const s2 = TBCR_IO.serializeState(p1.params, p1.ref || P.ref);
+    T.ok('round-trip idempotent', JSON.stringify(s1.params) === JSON.stringify(s2.params));
+  }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
@@ -465,6 +473,41 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   }
   // export/import/optimize wired in Task 10
   window.__WIDGET = { render, loadPreset, get state(){ return state; }, syncInputsFromParams };
+  function doExport(){
+    const text = JSON.stringify(TBCR_IO.serializeState(state.params, state.ref), null, 2);
+    if (navigator.clipboard) navigator.clipboard.writeText(text);
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));
+    a.download='transit-bcr-scenario.json'; a.click();
+  }
+  function doImport(){
+    const text = prompt('Paste scenario JSON:'); if(!text) return;
+    let obj; try { obj = JSON.parse(text); } catch(e){ $('warn').textContent='Invalid JSON: '+e.message; return; }
+    const { params, ref, warnings } = TBCR_IO.parseState(obj);
+    Object.assign(state.params, params);
+    if (ref && ref.R0!=null) state.ref = TBCR.calibrateRef(state.params, ref);
+    $('warn').textContent = warnings.join('\n');
+    syncInputsFromParams(); render();
+  }
+  function runOptimize(objective){
+    state.selectedOpt = objective;
+    const parts = ['welfare','revenue','fareboxTarget'].map(o=>{
+      const r = TBCR.optimizeFare(state.params, state.ref, o, {fareboxTarget:40});
+      return `${o}: ${r.fareStar==null?'n/a':'$'+r.fareStar.toFixed(2)}`;
+    });
+    state.lastOpt = TBCR.optimizeFare(state.params, state.ref, objective, {fareboxTarget:40});
+    $('optout').textContent = 'Optimal fares → '+parts.join('  ·  ')+'   (selected: '+objective+')';
+    if (window.__updateCharts) window.__updateCharts(TBCR.computeWelfare(state.params, state.ref));
+  }
+  function doSnap(){
+    if(!state.lastOpt || state.lastOpt.fareStar==null) return;
+    state.params.f = Math.round(state.lastOpt.fareStar/0.05)*0.05;
+    syncInputsFromParams(); render();
+  }
+  $('btnExport').addEventListener('click', doExport);
+  $('btnImport').addEventListener('click', doImport);
+  $('btnSnap').addEventListener('click', doSnap);
+  document.querySelectorAll('[data-opt]').forEach(b=> b.addEventListener('click', ()=>runOptimize(b.dataset.opt)));
   buildSliders(); initPresets(); loadPreset('us_lrt');
 }
 </script>
