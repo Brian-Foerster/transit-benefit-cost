@@ -7,9 +7,44 @@
   body{font:15px/1.5 system-ui,Segoe UI,Arial,sans-serif;max-width:1100px;margin:1rem auto;padding:0 1rem;color:#1a1a1a}
   #out{font:13px/1.45 monospace;white-space:pre-wrap;margin:1rem 0}
   #out .pass{color:var(--green)} #out .fail{color:var(--red);font-weight:700}
+  h1{font-size:1.4rem} h2{font-size:1.05rem;margin:1.2rem 0 .4rem}
+  .bar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.5rem 0}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin:.5rem 0}
+  .card{border:1px solid #ddd;border-radius:8px;padding:.75rem}
+  .card .v{font-size:1.5rem;font-weight:700}
+  .sliders{display:grid;grid-template-columns:repeat(2,1fr);gap:.4rem 1.5rem}
+  .row{display:grid;grid-template-columns:1fr 140px 70px;align-items:center;gap:.5rem}
+  .row input[type=range]{width:100%}
+  button,select{padding:.35rem .6rem;font:inherit}
+  #warn{color:var(--red);white-space:pre-wrap}
+  #breakdown{border:1px solid #eee;border-radius:8px;padding:.75rem;background:#fafafa;font-size:.92rem}
 </style></head>
 <body>
 <div id="out"></div>
+<div id="app">
+  <h1>Transit Benefit-Cost Model <small>(expanded, endogenous demand)</small></h1>
+  <div class="bar">
+    <label>Preset: <select id="preset"></select></label>
+    <button id="btnExport">Export JSON</button>
+    <button id="btnImport">Import JSON</button>
+    <span>Optimize fare:</span>
+    <button data-opt="welfare">Welfare</button>
+    <button data-opt="revenue">Revenue</button>
+    <button data-opt="fareboxTarget">Farebox 40%</button>
+    <button id="btnSnap">Snap fare to selected</button>
+  </div>
+  <div id="warn"></div>
+  <div class="cards">
+    <div class="card"><div>Total annual benefits</div><div class="v" id="cB">–</div></div>
+    <div class="card"><div>Net annual cost (incl. MCPF)</div><div class="v" id="cC">–</div></div>
+    <div class="card"><div>Benefit-cost ratio</div><div class="v" id="cBCR">–</div></div>
+  </div>
+  <div id="optout" class="bar"></div>
+  <h2>Demand &amp; fare</h2><div class="sliders" id="grpDemand"></div>
+  <h2>Service &amp; cost</h2><div class="sliders" id="grpService"></div>
+  <h2>Behavioral &amp; second-best</h2><div class="sliders" id="grpBehavior"></div>
+  <h2>Breakdown</h2><div id="breakdown"></div>
+</div>
 
 <script id="tbcr-engine">
 (function (root) {
@@ -348,5 +383,89 @@ window.TBCR_IO = (function () {
   if (out) { const d = document.createElement('div'); d.className = failed ? 'fail' : 'pass'; d.textContent = summary; out.appendChild(d); }
   else { console.log(summary); }
 })();
+</script>
+
+<script id="tbcr-ui">
+if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')) {
+  const SLIDERS = {
+    grpDemand: [
+      ['R','Daily ridership (000s)',15,80,1],['f','Average fare ($)',0.5,5,0.05],
+      ['dt','Time saved/trip (min)',5,25,0.5],['VOT','Value of time ($/hr)',8,40,1],
+      ['alpha','Car-diverted share',0.10,0.60,0.01],['gamma','Agglomeration uplift',0,0.50,0.01],
+    ],
+    grpService: [
+      ['K','Capital cost ($B)',0.5,6,0.1],['H_train','Daily train-hours',50,400,5],
+      ['V','Vehicles per train',1,10,1],['c_op','Op cost/veh-hr ($)',80,300,5],
+      ['avg_speed','Avg speed (mph)',8,45,1],['service_span_hrs','Service span (hrs)',10,24,1],
+    ],
+    grpBehavior: [
+      ['eps_f','Fare elasticity',-0.60,-0.10,0.01],['eps_t','Time elasticity',-1.0,-0.30,0.01],
+      ['lambda','MCPF (shadow price)',1.0,1.5,0.05],['seats_per_vehicle','Seats/vehicle',80,250,10],
+      ['peak_hour_share','Peak-hour share',0.08,0.30,0.01],['phi_crush','Crush crowding mult.',1.2,2.5,0.1],
+    ],
+  };
+  const state = { params:null, ref:null, lastOpt:null, selectedOpt:'welfare' };
+  const $ = id => document.getElementById(id);
+  const fmtM = x => (x>=0?'$':'-$') + Math.abs(x).toFixed(1) + 'M';
+
+  function buildSliders(){
+    for (const grp in SLIDERS){
+      const host = $(grp);
+      SLIDERS[grp].forEach(([key,label,min,max,step])=>{
+        const row=document.createElement('div'); row.className='row';
+        row.innerHTML = `<label for="s_${key}">${label}</label>`+
+          `<input type="range" id="s_${key}" min="${min}" max="${max}" step="${step}">`+
+          `<output id="o_${key}"></output>`;
+        host.appendChild(row);
+        row.querySelector('input').addEventListener('input', e=>{
+          state.params[key] = parseFloat(e.target.value);
+          $('o_'+key).textContent = e.target.value; render();
+        });
+      });
+    }
+  }
+  function syncInputsFromParams(){
+    Object.keys(state.params).forEach(key=>{
+      const el = $('s_'+key);
+      if (el){ el.value = state.params[key]; $('o_'+key).textContent = state.params[key]; }
+    });
+  }
+  function loadPreset(id){
+    const P = PRESETS[id];
+    state.params = { ...P.params };
+    state.ref = TBCR.calibrateRef(P.params, P.ref);
+    syncInputsFromParams(); render();
+  }
+  function renderBreakdown(w){
+    const b=w.benefits, c=w.costs, d=w.demand;
+    $('breakdown').innerHTML =
+      `Ridership: <b>${d.R.toFixed(1)}k</b>/day (load factor ${d.load.toFixed(2)}, crowding mult ${d.phi.toFixed(2)}). `+
+      `Farebox recovery ${w.FRR.toFixed(0)}%.<br>`+
+      `Benefits: CS ${fmtM(b.CS)} · congestion ${fmtM(b.congestion)} · Mohring ${fmtM(b.mohring)} · `+
+      `accident ${fmtM(b.accident)} · emissions ${fmtM(b.emissions)} · labor ${fmtM(b.labor)} · `+
+      `crowding ${fmtM(b.crowdingDisamenity)} · agglomeration ${fmtM(b.agglomeration)} = <b>${fmtM(b.total)}</b>.<br>`+
+      `Costs: annualized capital ${fmtM(c.annualizedCapital)} · `+
+      `operating ${c.opNet<0?'deficit '+fmtM(-c.opNet):'surplus offset '+fmtM(c.surplusOffset)} · `+
+      `MCPF deadweight ${fmtM(c.mcpfDeadweight)} = net <b>${fmtM(w.netCostWithMCPF)}</b>.`;
+  }
+  function render(){
+    const w = TBCR.computeWelfare(state.params, state.ref);
+    $('cB').textContent = fmtM(w.B);
+    $('cC').textContent = fmtM(w.netCostWithMCPF);
+    const bcrEl = $('cBCR');
+    bcrEl.textContent = isFinite(w.BCR)? w.BCR.toFixed(2) : '∞';
+    bcrEl.style.color = w.BCR>=1.5?'var(--green)': w.BCR>=1.0?'var(--amber)':'var(--red)';
+    renderBreakdown(w);
+    if (window.__updateCharts) window.__updateCharts(w);   // defined in Task 11
+  }
+  function initPresets(){
+    const sel = $('preset');
+    Object.keys(PRESETS).forEach(id=>{ const o=document.createElement('option'); o.value=id; o.textContent=PRESETS[id].label; sel.appendChild(o); });
+    sel.addEventListener('change', e=> loadPreset(e.target.value));
+  }
+  // export/import/optimize wired in Task 10
+  window.__WIDGET = { render, loadPreset, get state(){ return state; }, syncInputsFromParams };
+  buildSliders(); initPresets(); loadPreset('us_lrt');
+}
 </script>
 </body></html>
