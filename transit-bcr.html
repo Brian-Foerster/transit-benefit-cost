@@ -18,7 +18,25 @@
     CONGESTION_PER_MI: 0.20, ACCIDENT_PER_MI: 0.03, EMISSIONS_PER_MI: 0.015,
     MOHRING_FACTOR: 0.18, LABOR_FACTOR: 0.05,
   };
-  root.TBCR = { CONST };
+  const MILLION = 1e6;
+  function crf(rate, years) { const g = Math.pow(1 + rate, years); return (rate * g) / (g - 1); }
+  function computeCosts(params, demand) {
+    const { K, H_train, V, c_op, f, lambda } = params;
+    const R = demand.R;
+    const annualizedCapital = (K * 1e9 * crf(CONST.DISCOUNT_RATE, CONST.ASSET_LIFE_YEARS)) / MILLION;
+    const opCost = (c_op * H_train * V * CONST.OPERATING_DAYS) / MILLION;
+    const fareRev = (R * 1000 * CONST.OPERATING_DAYS * f) / MILLION;
+    const opNet = fareRev - opCost;
+    let surplusOffset = 0, netCost;
+    if (opNet >= 0) { surplusOffset = Math.min(opNet, annualizedCapital); netCost = annualizedCapital - surplusOffset; }
+    else { netCost = annualizedCapital + Math.abs(opNet); }
+    const subsidy = Math.max(netCost, 0);
+    const mcpfDeadweight = (lambda - 1) * subsidy;
+    const netCostWithMCPF = netCost + mcpfDeadweight;
+    const FRR = opCost > 0 ? (fareRev / opCost) * 100 : 0;
+    return { annualizedCapital, opCost, fareRev, opNet, surplusOffset, netCost, mcpfDeadweight, netCostWithMCPF, FRR };
+  }
+  root.TBCR = { CONST, crf, computeCosts };
 })(window);
 </script>
 
@@ -41,6 +59,18 @@
   // ---- TESTS ----
   T.ok('engine loaded', typeof TBCR === 'object');
   T.eq('operating days const', TBCR.CONST.OPERATING_DAYS, 300);
+  // Task 2: CRF and costs
+  T.eq('crf 4%/30yr', TBCR.crf(0.04, 30), 0.05783, 5e-4);
+  {
+    const p = { K:1.5, H_train:150, V:3, c_op:180, f:1.75, lambda:1 };
+    const c = TBCR.computeCosts(p, { R:40 });
+    T.eq('annualized capital ~86.7M', c.annualizedCapital, 86.7, 0.02);
+    T.eq('op cost 24.3M', c.opCost, 24.3, 0.02);        // 180*150*3*300 = 24.30M
+    T.eq('fare rev 21.0M', c.fareRev, 21.0, 0.02);       // 40000*300*1.75 = 21.00M
+    T.ok('operating deficit', c.opNet < 0);
+    T.eq('net cost ~90.0M', c.netCost, 86.7+3.3, 0.03);  // capital + |opNet| (24.3-21.0=3.3)
+    T.eq('mcpf off at lambda=1', c.mcpfDeadweight, 0, 1e-9);
+  }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
