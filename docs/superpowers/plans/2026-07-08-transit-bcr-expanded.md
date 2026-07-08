@@ -14,7 +14,7 @@
 - No build step, no framework, no bundler, no npm packages. `run-tests.mjs` uses only Node built-ins.
 - The engine (`TBCR.*`) and presets/IO (`PRESETS`, `TBCR_IO`) blocks MUST be DOM-free and pure: no `document`, no `window`-mutation beyond the single namespace assignment, deterministic for given input. Only the `tbcr-ui` block may touch the DOM or Chart.js.
 - Tests must run headlessly via `node run-tests.mjs` (exit 0 = all pass, exit 1 = any fail) AND in-browser via `transit-bcr.html?test=1`.
-- **Regression anchor (non-negotiable):** at each preset's reference point with MCPF `λ = 1` and crowding `φ = 1`, endogenous `R === R0`; the US-LRT baseline preset (with `φ = 1` forced via `load_comfort` override, per the spec's anchor definition) yields total benefits ≈ $127M and BCR ≈ 1.2 (tolerance ±1%).
+- **Regression anchor (non-negotiable):** at each preset's reference point with MCPF `λ = 1` and crowding `φ = 1`, endogenous `R === R0`; the US-LRT baseline preset (with `φ = 1` forced via `load_comfort` override) reproduces the source model's **formulas** — total benefits ≈ **$75.24M**, net cost ≈ **$90.05M**, BCR ≈ **0.836**. NOTE: the source doc's prose headline ($127M/1.2) is internally inconsistent with its own equations; the anchor targets the formula-derived values (decided 2026-07-08).
 - Fixed assumptions from the source model: trip length 8 mi, operating days/year 300, discount rate 4%, asset life 30 yr, congestion $0.20/auto-mi, accident $0.03/auto-mi, emissions $0.015/auto-mi.
 - Elasticity defaults: `εf = −0.35`, `εt = −0.60`. MCPF `λ` default 1.30. Crowding: `seats_per_vehicle` 150, `peak_hour_share` 0.17, `peak_direction_share` 0.60, `load_comfort` 0.80, `φ_crush` 1.8 (reached at load 1.5). `avg_speed` 20 mph, `service_span_hrs` 18.
 - Money reported in $millions/year. Ridership `R` in thousands of daily riders.
@@ -470,7 +470,7 @@ Add a new `<script id="tbcr-presets">` block AFTER `tbcr-engine` and BEFORE `tbc
 window.PRESETS = {
   us_lrt: {
     label: 'US LRT baseline',
-    citation: 'Source-doc defaults; US NTD medians. Benefits ~$127M, BCR ~1.2.',
+    citation: 'Source-doc defaults; US NTD medians. Formula-consistent: benefits ~$75.2M, net cost ~$90M, BCR ~0.84.',
     params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.25, K:1.5,
       H_train:150, V:3, c_op:180, f:1.75, lambda:1.30,
       eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
@@ -536,8 +536,8 @@ window.PRESETS = {
   T.eq('anchor: R == R0', w.demand.R, 40, 1e-6);
   T.eq('anchor: phi == 1', w.demand.phi, 1, 1e-9);
   T.eq('anchor: no crowding disamenity', w.benefits.crowdingDisamenity, 0, 1e-9);
-  T.eq('anchor: total benefits ~127M', w.B, 127, 0.01*127);
-  T.eq('anchor: BCR ~1.2', w.BCR, 1.2, 0.06);
+  T.eq('anchor: total benefits 75.24M', w.B, 75.24, 0.02);
+  T.eq('anchor: BCR 0.836', w.BCR, 0.8356, 0.005);
   // MCPF monotonicity on the subsidized baseline
   const refN = TBCR.calibrateRef(P.params, P.ref);
   const wLo = TBCR.computeWelfare({ ...P.params, lambda:1.0 }, refN);
@@ -583,7 +583,7 @@ Also update `run-tests.mjs` is NOT needed — it already tries to load `tbcr-pre
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `node run-tests.mjs` → all Task 6/6b lines PASS, exit 0.
-If `anchor: total benefits ~127M` misses, DO NOT loosen the tolerance. Inspect `w.benefits.CS` and each component in the failing output and reconcile against the source doc ($127M total: CS 43.2 + congestion + mohring + accident + emissions + labor, then ×1.25 agglomeration). The anchor is defined with `φ=1` (forced here), so crowding disamenity must be exactly 0.
+If the anchor misses, DO NOT loosen the tolerance. The formula-consistent target is $75.24M total: CS 43.2 + congestion 5.76 + Mohring 7.776 + accident 0.864 + emissions 0.432 + labor 2.16 = direct 60.192, ×1.25 agglomeration = 75.24. Net cost = annualized capital 86.745 + operating deficit 3.3 = 90.045; BCR = 0.8356. The anchor is defined with `φ=1` (forced here), so crowding disamenity must be exactly 0. (The source doc's prose $127M/1.2 is a documented inconsistency — do not chase it.)
 
 - [ ] **Step 6: Commit**
 
@@ -1114,8 +1114,8 @@ Insert before `// ---- END TESTS ----`:
   const anchorP={ ...PRESETS.us_lrt.params, lambda:1, load_comfort:10 };
   const ref=TBCR.calibrateRef(anchorP,PRESETS.us_lrt.ref);
   const w=TBCR.computeWelfare(anchorP,ref);
-  T.eq('baseline benefits ~127M', w.B, 127, 0.01*127);
-  T.eq('baseline BCR ~1.2', w.BCR, 1.2, 0.06);
+  T.eq('baseline benefits 75.24M', w.B, 75.24, 0.02);
+  T.eq('baseline BCR 0.836', w.BCR, 0.8356, 0.005);
 }
 ```
 
@@ -1168,9 +1168,11 @@ outside ridership model.
 ## Anchor
 
 At each preset's reference point with λ=1 and φ=1 (comfort threshold lifted), endogenous ridership
-equals the reference ridership, and the US-LRT baseline reproduces the original model's ~$127M
-benefits and ~1.2 BCR. In normal use (default `load_comfort=0.8`) benefits sit modestly below $127M
-because of the crowding disamenity — this is intended behavior, not a discrepancy.
+equals the reference ridership, and the US-LRT baseline reproduces the original model's **formulas**:
+~$75.2M benefits, ~$90M net cost, ~0.84 BCR. (The source doc's prose headline of $127M/1.2 is
+inconsistent with its own equations; we reproduce the equations.) In normal use (default
+`load_comfort=0.8`) benefits sit modestly below the anchor value because of the crowding disamenity —
+intended behavior, not a discrepancy.
 
 ## Not modeled
 

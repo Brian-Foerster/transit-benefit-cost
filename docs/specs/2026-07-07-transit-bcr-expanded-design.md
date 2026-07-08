@@ -36,8 +36,17 @@ for a later tier. Do not implement them.
 ### Non-negotiable regression anchor
 
 At each preset's **reference point**, with MCPF λ = 1 and crowding multiplier φ = 1, the expanded model
-**must reproduce the original widget's outputs**. For the US-LRT baseline preset that means
-total annual benefits ≈ **$127M** and BCR ≈ **1.2**. This identity is the primary correctness test.
+**must reproduce the original model's formulas**. For the US-LRT baseline preset, working the source
+doc's equations at the stated defaults yields total annual benefits ≈ **$75.24M**, net cost ≈ **$90.05M**,
+BCR ≈ **0.836**. This identity is the primary correctness test.
+
+> **Source-document inconsistency (resolved 2026-07-08):** the source doc's prose (Sensitivity section)
+> claims $127M benefits / $107M net cost / BCR 1.2, but those headline figures do not follow from its own
+> benefit/cost equations at the stated defaults — the formulas give $75.24M / $90.05M / 0.836 (verified by
+> hand: CS 43.2 + congestion 5.76 + Mohring 7.776 + accident 0.864 + emissions 0.432 + labor 2.16 = direct
+> 60.192, ×1.25 = 75.24; net cost = annualized capital 86.745 + operating deficit 3.3 = 90.045). Decision:
+> the model faithfully implements the **equations**, and the anchor targets the formula-derived values. A
+> consequence worth stating plainly: the default US-LRT project scores **BCR < 1** under its own formulas.
 
 ---
 
@@ -107,8 +116,8 @@ GC  = f + (VOT/60) × tGen                               # current generalized c
 CS  = CS0 − ½ × (R0 + R) × (GC − GC0) × operating_days  # riders in trips/day; add when GC<GC0, subtract when GC>GC0
 ```
 
-- At the reference point `GC = GC0` ⇒ `CS = CS0` ⇒ **the anchor holds** (baseline preset → original ~$90M CS,
-  ~$127M total benefits, BCR ≈ 1.2).
+- At the reference point `GC = GC0` ⇒ `CS = CS0` ⇒ **the anchor holds** (baseline preset → CS $43.2M,
+  ~$75.2M total benefits, BCR ≈ 0.84 — the formula-consistent values; see the anchor note above).
 - Raising fare or degrading service (`GC > GC0`) loses surplus via the rule-of-a-half trapezoid; improving
   service (`GC < GC0`) adds surplus. CS therefore responds correctly to both fare and service changes while
   preserving the original counterfactual-based magnitude.
@@ -194,7 +203,7 @@ linkages** (e.g., "raising fare from $1.75 to $2.50 cut ridership 15% via εf=�
 A `PRESETS` JS object. Each entry = full parameter vector + `referencePoint {R0, f0, H0, tGen0, tWait0}`
 + a one-line citation string. Ship five:
 
-1. **US LRT baseline** — the source doc's current defaults (benefits ≈ $127M, BCR ≈ 1.2). Anchor preset.
+1. **US LRT baseline** — the source doc's current defaults (formula-consistent: benefits ≈ $75.2M, BCR ≈ 0.84). Anchor preset.
 2. **Elizabeth Line (London)** — γ = 24%, congestion-priced city (congestion externality reduced).
 3. **Stockholm T-bana** — γ = 48%, high BCR (~6) reference case.
 4. **High-cost US project** — K = $3–6B teaching case that pushes BCR < 1.
@@ -224,7 +233,7 @@ Selecting a preset repopulates **every** slider and the reference point, then re
 ## 6. Testing
 
 - **Regression anchor (primary):** for each preset, at its reference point with λ = 1 and φ = 1, assert
-  endogenous `R == R0` (pivot identity) and that the US-LRT baseline yields benefits ≈ $127M, BCR ≈ 1.2
+  endogenous `R == R0` (pivot identity) and that the US-LRT baseline yields benefits ≈ $75.24M, BCR ≈ 0.836
   (tolerance ±1%).
 - **Engine unit checks** (pure functions, no DOM):
   - demand strictly decreasing in fare; strictly increasing in `H_train`.
