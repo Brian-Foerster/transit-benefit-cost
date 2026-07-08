@@ -84,8 +84,76 @@
     const total = direct * (1 + params.gamma);
     return { CS, congestion, mohring, accident, emissions, labor, crowdingDisamenity, direct, agglomeration, total };
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits };
+  function calibrateRef(params, refSeed) {
+    const d0 = computeDemand(params, { ...refSeed, tGen0: null });
+    return { ...refSeed, tGen0: d0.tGen, GC0: d0.GC };
+  }
+  function computeWelfare(params, ref) {
+    const demand = computeDemand(params, ref);
+    const benefits = computeBenefits(params, demand, ref);
+    const costs = computeCosts(params, demand);
+    const B = benefits.total;
+    const W = B - costs.netCostWithMCPF;
+    const BCR = costs.netCostWithMCPF !== 0 ? B / costs.netCostWithMCPF : Infinity;
+    return { demand, benefits, costs, B, netCostWithMCPF: costs.netCostWithMCPF, W, BCR, FRR: costs.FRR };
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare };
 })(window);
+</script>
+
+<script id="tbcr-presets">
+window.PRESETS = {
+  us_lrt: {
+    label: 'US LRT baseline',
+    citation: 'Source-doc defaults; US NTD medians. Benefits ~$127M, BCR ~1.2.',
+    params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.25, K:1.5,
+      H_train:150, V:3, c_op:180, f:1.75, lambda:1.30,
+      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
+      peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
+      phi_crush:1.8, service_span_hrs:18 },
+    ref: { R0:40, f0:1.75, H0:150, tWait0:5 },
+  },
+  elizabeth_line: {
+    label: 'Elizabeth Line (London)',
+    citation: 'Centre for Cities agglomeration 24%; congestion-priced city (lower congestion externality).',
+    params: { R:60, dt:15, VOT:25, alpha:0.20, gamma:0.24, K:5.5,
+      H_train:280, V:9, c_op:220, f:3.00, lambda:1.30,
+      eps_f:-0.30, eps_t:-0.55, avg_speed:33, seats_per_vehicle:200,
+      peak_hour_share:0.18, peak_direction_share:0.62, load_comfort:0.80,
+      phi_crush:1.8, service_span_hrs:19 },
+    ref: { R0:60, f0:3.00, H0:280, tWait0:3 },
+  },
+  stockholm_tbana: {
+    label: 'Stockholm T-bana',
+    citation: 'Borjesson et al. 2020: agglomeration ~48%, BCR ~6.',
+    params: { R:50, dt:14, VOT:22, alpha:0.35, gamma:0.48, K:1.2,
+      H_train:200, V:6, c_op:150, f:3.50, lambda:1.30,
+      eps_f:-0.30, eps_t:-0.60, avg_speed:22, seats_per_vehicle:150,
+      peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
+      phi_crush:1.8, service_span_hrs:18 },
+    ref: { R0:50, f0:3.50, H0:200, tWait0:4 },
+  },
+  high_cost_us: {
+    label: 'High-cost US project',
+    citation: 'US megaproject capital $4.5B; teaching case (BCR < 1).',
+    params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.10, K:4.5,
+      H_train:150, V:3, c_op:250, f:1.75, lambda:1.30,
+      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
+      peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
+      phi_crush:1.8, service_span_hrs:18 },
+    ref: { R0:40, f0:1.75, H0:150, tWait0:5 },
+  },
+  low_cost_intl: {
+    label: 'Low-cost international',
+    citation: 'International best-practice LRT capital ~$1.0B/10km.',
+    params: { R:45, dt:12, VOT:16, alpha:0.30, gamma:0.25, K:1.0,
+      H_train:160, V:3, c_op:120, f:1.50, lambda:1.30,
+      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
+      peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
+      phi_crush:1.8, service_span_hrs:18 },
+    ref: { R0:45, f0:1.50, H0:160, tWait0:5 },
+  },
+};
 </script>
 
 <script id="tbcr-tests">
@@ -169,6 +237,33 @@
     const bC = TBCR.computeBenefits(crowded, dC, refC);
     T.ok('crowding disamenity negative when phi>1', dC.phi > 1 && bC.crowdingDisamenity < 0);
   }
+  // Task 6: welfare + anchor
+  {
+    const P = PRESETS.us_lrt;
+    // Anchor per spec: lambda=1 AND phi=1. Force phi=1 via load_comfort override,
+    // calibrating the reference under the same regime so GC0 matches (clean pivot identity).
+    const anchorParams = { ...P.params, lambda:1, load_comfort:10 };
+    const ref = TBCR.calibrateRef(anchorParams, P.ref);
+    const w = TBCR.computeWelfare(anchorParams, ref);
+    T.eq('anchor: R == R0', w.demand.R, 40, 1e-6);
+    T.eq('anchor: phi == 1', w.demand.phi, 1, 1e-9);
+    T.eq('anchor: no crowding disamenity', w.benefits.crowdingDisamenity, 0, 1e-9);
+    T.eq('anchor: total benefits ~127M', w.B, 127, 0.01*127);
+    T.eq('anchor: BCR ~1.2', w.BCR, 1.2, 0.06);
+    // MCPF monotonicity on the subsidized baseline
+    const refN = TBCR.calibrateRef(P.params, P.ref);
+    const wLo = TBCR.computeWelfare({ ...P.params, lambda:1.0 }, refN);
+    const wHi = TBCR.computeWelfare({ ...P.params, lambda:1.5 }, refN);
+    T.ok('BCR falls as lambda rises (subsidized)', wHi.BCR < wLo.BCR);
+  }
+  // Task 6b: every preset satisfies the pivot identity (phi=1 forced)
+  Object.keys(PRESETS).forEach(id => {
+    const P = PRESETS[id];
+    const ap = { ...P.params, lambda:1, load_comfort:10 };
+    const ref = TBCR.calibrateRef(ap, P.ref);
+    const w = TBCR.computeWelfare(ap, ref);
+    T.eq('pivot identity '+id, w.demand.R, P.ref.R0, 1e-5);
+  });
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
