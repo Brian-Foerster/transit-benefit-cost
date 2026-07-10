@@ -46,11 +46,10 @@ note.)
 **As shipped (what the cards actually show):** the presets ship with the corrections **on**
 (`λ=1.30` MCPF, `load_comfort=0.80` crowding), so the numbers on screen are lower than the anchor —
 this is the point of the second-best additions, not a discrepancy. For the US-LRT preset at its
-defaults the widget shows **B ≈ $39.7M, net cost ≈ $117.1M, BCR ≈ 0.34**: the crowding disamenity
-removes ~$28M of benefit (peak load ≈1.09 → φ≈1.33) and the MCPF shadow price adds ~$27M of
-deadweight to the subsidy. That is roughly half the anchor benefit and a third higher cost — a large,
-deliberate movement, not a modest one. Turn MCPF to 1.0 and lift the comfort threshold and you return
-to the anchor.
+defaults the widget shows **B ≈ $60.6M, net cost ≈ $117.1M, BCR ≈ 0.52**: a mild crowding disamenity
+removes ~$12M of benefit (peak load ≈1.09 → φ≈1.14) and the MCPF shadow price adds ~$27M of
+deadweight to the subsidy. Turn MCPF to 1.0 and lift the comfort threshold and you return to the
+anchor.
 
 ## Presets
 
@@ -60,11 +59,11 @@ on-screen info box explains what makes each one distinct. As-shipped BCRs (with 
 
 | Preset | Riders/day | Capital | $ / daily rider | BCR | Character |
 |---|---|---|---|---|---|
-| US LRT baseline | 40k | $1.5B | $38k | 0.34 | marginal, subsidy-heavy (the anchor preset) |
-| Elizabeth Line | 600k | $24B | $40k | 1.51 | costly but justified by scale + agglomeration |
+| US LRT baseline | 40k | $1.5B | $38k | 0.52 | marginal, subsidy-heavy (the anchor preset) |
+| Elizabeth Line | 600k | $24B | $40k | 1.63 | costly but justified by scale + agglomeration |
 | Stockholm T-bana | 130k | $3B | $23k | 2.49 | efficient flagship winner |
-| High-cost US | 75k | $6B | $80k | 0.23 | cost-disease cautionary tale |
-| Low-cost intl | 70k | $1.2B | $17k | 1.24 | cheap and efficient |
+| High-cost US | 75k | $6B | $80k | 0.26 | cost-disease cautionary tale |
+| Low-cost intl | 70k | $1.2B | $17k | 1.28 | cheap and efficient |
 
 `us_lrt` is held fixed as the regression anchor; the other four were recalibrated to realistic,
 internally-consistent scales.
