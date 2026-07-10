@@ -266,7 +266,19 @@
     }
     return disc;
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare, DEFAULT_ASSETS, capexSchedule, rampFactor, carbonFactor, discountSeries };
+  function annualKernel(params, ref, t) {
+    const R0t = ref.R0 * rampFactor(t, params);
+    const yref = { ...ref, R0: R0t };                       // scale reference ridership; f0/H0/tGen0/GC0 fixed
+    const yparams = { ...params, carbonFactor: carbonFactor(t, params) };
+    const demand = computeDemand(yparams, yref);
+    const benefits = computeBenefits(yparams, demand, yref);
+    const opCost = (params.c_op * params.H_train * params.V * CONST.OPERATING_DAYS) / 1e6;
+    const fareRev = (demand.R * 1000 * CONST.OPERATING_DAYS * params.f) / 1e6;
+    const opNet = fareRev - opCost;
+    const FRR = opCost > 0 ? (fareRev / opCost) * 100 : 0;
+    return { demand, benefits, opCost, fareRev, opNet, R0t, FRR };
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare, DEFAULT_ASSETS, capexSchedule, rampFactor, carbonFactor, discountSeries, annualKernel };
 })(window);
 </script>
 
@@ -586,6 +598,17 @@ window.TBCR_IO = (function () {
     T.ok('disc decreasing', disc[60] < disc[30] && disc[30] < disc[1]);
     const dd = TBCR.discountSeries({...p, declining_rate:true});
     T.ok('declining discounts distant years less harshly', dd[60] > disc[60]);
+  }
+  // Task 4: annual kernel
+  {
+    const P = PRESETS.us_lrt; const ref = TBCR.calibrateRef(P.params, P.ref);
+    const y0 = TBCR.annualKernel(P.params, ref, 0);
+    const yM = TBCR.annualKernel(P.params, ref, 5);   // mature (ramp=1)
+    T.ok('year 0 ridership below mature (ramp<1)', y0.demand.R < yM.demand.R);
+    T.ok('mature benefits exceed year-0 benefits', yM.benefits.total > y0.benefits.total);
+    T.ok('opCost constant across years', Math.abs(y0.opCost - yM.opCost) < 1e-9);
+    T.ok('fareRev tracks ridership', yM.fareRev > y0.fareRev);
+    T.ok('FRR present', typeof yM.FRR === 'number');
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
