@@ -148,8 +148,8 @@ peak load rises over time, so crowding worsens in later years — captured autom
 
 ### 5.2 Carbon escalation
 
-`carbonFactor(t) = (1 + carbonGrowth)^t`, applied to the **emissions** term only (default
-`carbonGrowth = 3%/yr` real; range 0–7%). Off when set to 0.
+`carbonFactor(t) = (1 + carbonGrowth)^t`, applied to the **emissions** term only. **Default
+`carbonGrowth = 0` (off)**; range 0–7% so users can enable a rising social cost of carbon.
 
 ### 5.3 Horizon
 
@@ -248,14 +248,14 @@ during implementation and pinned with tolerance:
 
 ---
 
-## 12. Open items flagged for review (defaults chosen; confirm or adjust)
+## 12. Resolved defaults (confirmed 2026-07-09)
 
-1. **Horizon 60 yr** default (rail). OK, or prefer 40?
-2. **Asset split** 55/25/15/5 with lives 80/30/30/12 — reasonable for a generic rail line?
-3. **Ridership ramp** 60%→100% over 5 yr, long-run growth 0% by default — or enable modest growth
-   (~1%/yr) by default?
-4. **Carbon escalation** 3%/yr on emissions by default (vs off)?
-5. **Headline metric:** NPV + PV-BCR as the cards, mature-year annual demoted to the breakdown — good,
-   or keep an annual BCR card too?
+1. **Horizon:** 60 years (slider 20–100). ✓
+2. **Asset split:** 55/25/15/5 shares, lives 80/30/30/12 (parameters; presets may override). ✓
+3. **Ridership ramp:** 60%→100% over 5 years; **long-run growth 0%/yr by default** (slider 0–2%). ✓
+4. **Carbon escalation:** **off by default** (`carbonGrowth = 0`; slider 0–7%). ✓
+5. **Headline metric:** NPV + PV-based BCR on the cards; mature-representative-year annual figures live
+   in the breakdown. ✓
 
-Everything else follows the resolved decisions (A1 drop-standalone, A2 re-base, just re-anchor).
+All other behaviour follows the resolved decisions: A1 (crowding single-channel, drop standalone,
+keep diagnostic), A2 (agglomeration on CS+Mohring only), just re-anchor.
