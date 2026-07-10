@@ -900,6 +900,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   const state = { params:null, ref:null, lastOpt:null, selectedOpt:'welfare' };
   const $ = id => document.getElementById(id);
   const fmtM = x => (x<0?'-':'') + (Math.abs(x)>=1000 ? '$'+(Math.abs(x)/1000).toFixed(2)+'B' : '$'+Math.abs(x).toFixed(1)+'M');
+  const fmtSlider = (key, v) => key === 'rider_income' ? Number(v).toLocaleString('en-US') : v;   // thousands separator for income
   const HELP = {
     R:'Average weekday boardings on the line, in thousands. Drives every benefit — more riders means more time savings, more diverted car trips, and more fare revenue. Typical: 20–80k for an LRT line, hundreds of thousands for a major metro.',
     f:'Average fare paid per trip. Raising it sheds riders (via the fare elasticity) and lifts revenue; the optimizer solves for the net welfare effect. Typical US transit: $1.50–$3.00.',
@@ -955,7 +956,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
         if (!(key in ASSET_IDX) && key !== 'R') {
           row.querySelector('input').addEventListener('input', e=>{
             state.params[key] = parseFloat(e.target.value);
-            $('o_'+key).textContent = e.target.value; render();
+            $('o_'+key).textContent = fmtSlider(key, e.target.value); render();
           });
         }
         row.querySelector('.help').addEventListener('click', ()=>{ tip.hidden = !tip.hidden; });
@@ -966,7 +967,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   function syncInputsFromParams(){
     Object.keys(state.params).forEach(key=>{
       const el = $('s_'+key);
-      if (el){ el.value = state.params[key]; $('o_'+key).textContent = state.params[key]; }
+      if (el){ el.value = state.params[key]; $('o_'+key).textContent = fmtSlider(key, state.params[key]); }
     });
     Object.keys(ASSET_IDX).forEach(id=>{
       const el = $('s_'+id);
