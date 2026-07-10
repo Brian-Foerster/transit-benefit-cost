@@ -231,7 +231,27 @@
     const fStar = (a + b) / 2, w = computeWelfare({ ...params, f: fStar }, ref);
     return { fareStar: fStar, value: objective === 'revenue' ? w.costs.fareRev : w.W, R: w.demand.R, W: w.W, BCR: w.BCR, FRR: w.FRR };
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare };
+  const DEFAULT_ASSETS = [
+    { share:0.55, life:80 },  // civil works
+    { share:0.25, life:30 },  // track & systems
+    { share:0.15, life:30 },  // rolling stock
+    { share:0.05, life:12 },  // fare / IT
+  ];
+  function capexSchedule(params) {
+    const T = params.horizon || 60;
+    const classes = params.assets || DEFAULT_ASSETS;
+    const capex = new Array(T + 1).fill(0);
+    let residual = 0;
+    for (const c of classes) {
+      const cost = (params.K * c.share * 1e9) / 1e6;   // $M
+      let last = 0;
+      for (let t = 0; t < T; t += c.life) { capex[t] += cost; last = t; }   // build + renewals strictly before horizon
+      const remaining = (c.life - (T - last)) / c.life;                     // fraction of last tranche's life left at T
+      residual += cost * Math.max(0, Math.min(1, remaining));
+    }
+    return { capex, residual };
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare, DEFAULT_ASSETS, capexSchedule };
 })(window);
 </script>
 
@@ -354,6 +374,19 @@ window.TBCR_IO = (function () {
     T.ok('operating deficit', c.opNet < 0);
     T.eq('net cost ~90.0M', c.netCost, 86.7+3.3, 0.03);  // capital + |opNet| (24.3-21.0=3.3)
     T.eq('mcpf off at lambda=1', c.mcpfDeadweight, 0, 1e-9);
+  }
+  // Task 2: capex schedule (renewals + residual)
+  {
+    const params = { K:1.5, horizon:60, assets:[{share:0.55,life:80},{share:0.25,life:30},{share:0.15,life:30},{share:0.05,life:12}] };
+    const { capex, residual } = TBCR.capexSchedule(params);
+    T.eq('initial build at year 0 = full K', capex[0], 1.5*1000*0.05783/0.05783, 1e-6*1500); // = K in $M = 1500
+    T.ok('renewal spike at 30 (life-30 classes)', capex[30] > 0);
+    T.ok('renewal spike at 12 (IT)', capex[12] > 0);
+    T.ok('no build exactly at horizon', capex[60] === 0);
+    // civil (life 80 > horizon 60) keeps 25% residual; life-30 classes renewed at 30 are dead at 60 (0 residual)
+    const civilCost = 1.5*1000*0.55; // $825M
+    T.ok('residual >= civil remainder', residual >= civilCost*((80-60)/80) - 1e-6);
+    T.ok('residual positive', residual > 0);
   }
   // Task 3: crowding
   {
