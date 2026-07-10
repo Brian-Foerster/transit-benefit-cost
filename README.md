@@ -29,11 +29,6 @@ Open `transit-bcr.html` in any modern browser (double-click). No build step. Cha
   horizon, with ridership ramping in from opening and capital assets renewed and residualized on their
   own schedules, then discounted to present value (see below).
 
-## Presets
-
-US LRT baseline, Elizabeth Line, Stockholm T-bana, high-cost US project, low-cost international.
-See the `tbcr-presets` block in `transit-bcr.html` for parameter vectors and citations.
-
 ## JSON import/export
 
 Export copies/downloads a `{version, params, referencePoint}` object (schema v2 includes the asset
