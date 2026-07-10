@@ -251,7 +251,22 @@
     }
     return { capex, residual };
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare, DEFAULT_ASSETS, capexSchedule };
+  function rampFactor(t, params) {
+    const rs = params.ramp_start ?? 0.60, ry = params.ramp_years ?? 5, g = params.growth ?? 0;
+    const ramp = Math.min(1, rs + (1 - rs) * (ry > 0 ? t / ry : 1));
+    return ramp * Math.pow(1 + g, t);
+  }
+  function carbonFactor(t, params) { return Math.pow(1 + (params.carbon_growth ?? 0), t); }
+  function discountSeries(params) {
+    const T = params.horizon || 60, r = params.discount_rate ?? 0.04, dec = params.declining_rate || false;
+    const disc = new Array(T + 1); disc[0] = 1; let acc = 1;
+    for (let t = 1; t <= T; t++) {
+      const rt = dec ? (t <= 30 ? r : t <= 75 ? Math.max(r - 0.005, 0) : Math.max(r - 0.01, 0)) : r;
+      acc = acc / (1 + rt); disc[t] = acc;
+    }
+    return disc;
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare, DEFAULT_ASSETS, capexSchedule, rampFactor, carbonFactor, discountSeries };
 })(window);
 </script>
 
@@ -555,6 +570,22 @@ window.TBCR_IO = (function () {
     // carbon factor scales emissions only
     const b3 = TBCR.computeBenefits({ ...base, carbonFactor:2 }, d, ref);
     T.ok('carbonFactor doubles emissions', Math.abs(b3.emissions - 2*b.emissions) < 1e-9);
+  }
+  // Task 3: time helpers
+  {
+    const p = { ramp_start:0.60, ramp_years:5, growth:0, carbon_growth:0, horizon:60, discount_rate:0.04, declining_rate:false };
+    T.eq('ramp at t=0 = ramp_start', TBCR.rampFactor(0,p), 0.60, 1e-9);
+    T.eq('ramp reaches 1 at ramp_years', TBCR.rampFactor(5,p), 1.0, 1e-9);
+    T.eq('ramp holds at 1 after', TBCR.rampFactor(20,p), 1.0, 1e-9);
+    T.eq('carbon off by default = 1', TBCR.carbonFactor(30,p), 1.0, 1e-9);
+    T.ok('carbon grows when enabled', TBCR.carbonFactor(10,{...p,carbon_growth:0.03}) > 1.3);
+    T.ok('growth compounds', TBCR.rampFactor(10,{...p,growth:0.01}) > 1.0);
+    const disc = TBCR.discountSeries(p);
+    T.eq('disc[0]=1', disc[0], 1, 1e-12);
+    T.eq('disc[1]=1/1.04', disc[1], 1/1.04, 1e-9);
+    T.ok('disc decreasing', disc[60] < disc[30] && disc[30] < disc[1]);
+    const dd = TBCR.discountSeries({...p, declining_rate:true});
+    T.ok('declining discounts distant years less harshly', dd[60] > disc[60]);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
