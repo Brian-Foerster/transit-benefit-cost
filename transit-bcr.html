@@ -72,14 +72,20 @@
   </div>
   <div id="warn"></div>
   <div class="cards">
-    <div class="card"><div>Total annual benefits</div><div class="v" id="cB">–</div></div>
-    <div class="card"><div>Net annual cost (incl. MCPF)</div><div class="v" id="cC">–</div></div>
-    <div class="card"><div>Benefit-cost ratio</div><div class="v" id="cBCR">–</div></div>
+    <div class="card"><div>Net present value</div><div class="v" id="cNPV">–</div></div>
+    <div class="card"><div>Benefit-cost ratio (PV)</div><div class="v" id="cBCR">–</div></div>
+    <div class="card"><div>PV benefits / PV cost</div><div class="v" id="cPV">–</div></div>
   </div>
+  <div id="ratestrip" style="font-size:.85rem;color:#555;margin:.2rem 0"></div>
   <div id="optout" class="bar"></div>
   <h2>Demand &amp; fare</h2><div class="sliders" id="grpDemand"></div>
   <h2>Service &amp; cost</h2><div class="sliders" id="grpService"></div>
   <h2>Behavioral &amp; second-best</h2><div class="sliders" id="grpBehavior"></div>
+  <h2>Time &amp; finance</h2>
+  <label style="display:block;margin:.2rem 0"><input type="checkbox" id="chkDeclining"> Declining discount rate for distant years (Green Book style)</label>
+  <div class="sliders" id="grpTime"></div>
+  <details><summary style="cursor:pointer;font-size:1.05rem;font-weight:600;margin:1.2rem 0 .4rem">Asset lifecycle (advanced)</summary>
+  <div class="sliders" id="grpAssets"></div></details>
   <h2>Benefits vs. cost</h2>
   <div class="charts">
     <canvas id="chBenefit" height="140"></canvas>
@@ -707,6 +713,16 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
       ['eps_f','Fare elasticity',-1.50,-0.10,0.01],['eps_t','Time elasticity',-1.5,-0.20,0.01],
       ['lambda','MCPF (shadow price)',1.0,1.5,0.05],['seats_per_vehicle','Seats/vehicle',80,300,10],
       ['peak_hour_share','Peak-hour share',0.08,0.30,0.01],['phi_crush','Crush crowding mult.',1.2,2.5,0.1],
+      ['mohring_coef','Mohring markup (×CS)',0.05,0.30,0.01],['labor_coef','Labour markup (×CS)',0,0.15,0.01],
+    ],
+    grpTime: [
+      ['horizon','Appraisal horizon (yr)',20,100,5],['discount_rate','Discount rate',0.01,0.08,0.005],
+      ['ramp_start','Ridership at opening (×mature)',0.2,1.0,0.05],['ramp_years','Years to mature',1,20,1],
+      ['growth','Long-run ridership growth/yr',0,0.02,0.005],['carbon_growth','Carbon value growth/yr',0,0.07,0.005],
+    ],
+    grpAssets: [
+      ['asset_civil_life','Civil works life (yr)',40,120,5],['asset_track_life','Track & systems life (yr)',15,50,5],
+      ['asset_rs_life','Rolling stock life (yr)',15,45,5],['asset_it_life','Fare/IT life (yr)',5,25,1],
     ],
   };
   const state = { params:null, ref:null, lastOpt:null, selectedOpt:'welfare' };
@@ -731,6 +747,18 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     seats_per_vehicle:'Comfortable (seated) capacity per car. With frequency and cars/train it sets total capacity; loads above it start the crowding penalty. Typical: LRT ~150, metro/regional ~200–250.',
     peak_hour_share:'Fraction of daily riders in the single busiest hour and direction — higher concentration means worse peak crowding. Typical: 0.12–0.20 (~0.17 for a commuter-oriented US line).',
     phi_crush:'How much longer in-vehicle time “feels” at crush loading (reached at ~2.5× seated capacity). Typical: 1.5–2.0; 1.8 means a crush-loaded train is valued like an 80%-longer trip. Sets the severity of the crowding penalty.',
+    mohring_coef:'The Mohring (“more riders → more service → shorter waits for everyone”) effect, valued as a share of consumer surplus. Typical: 0.15–0.20 (0.18 default).',
+    labor_coef:'A small labor-market gain — cheaper commuting slightly offsets the income-tax drag on working — valued as a share of consumer surplus. Typical: 0.03–0.08 (0.05 default).',
+    horizon:'Years of costs and benefits included in the present-value calculation. Longer horizons reward durable assets (via residual value); default 60 for heavy rail.',
+    discount_rate:'The annual rate used to convert future costs and benefits into present value. Higher rates discount distant years more heavily, favoring short-lived, quick-payoff projects. Typical: 3–7%; 4% default (roughly the US OMB social discount rate).',
+    ramp_start:'Ridership at opening, as a fraction of the eventual mature-year level. Most new lines open well below their long-run ridership. Typical: 0.5–0.7 (0.6 default).',
+    ramp_years:'Years from opening until ridership reaches its mature (long-run) level. Typical: 3–7 years.',
+    growth:'Compounding annual growth in ridership after the line matures, on top of the ramp-up. Typical: 0–1.5%/yr for a stable metro area.',
+    carbon_growth:'Compounding annual growth in the per-mile value of avoided emissions (e.g. rising carbon prices). Typical: 0–3%/yr; 0 assumes today’s carbon values hold flat.',
+    asset_civil_life:'Useful life of tunnels, guideway, stations, and other civil works before they need full replacement. The longest-lived asset class — sets most of the residual value at the end of the horizon. Typical: 60–100 years.',
+    asset_track_life:'Useful life of track, signaling, and traction-power systems before renewal. Typical: 25–35 years.',
+    asset_rs_life:'Useful life of rolling stock (railcars) before replacement. Typical: 25–35 years.',
+    asset_it_life:'Useful life of fare-collection and IT/communications equipment before replacement — the shortest-lived, most frequently renewed asset class. Typical: 10–15 years.',
   };
 
   function buildSliders(){
@@ -753,11 +781,18 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
       });
     }
   }
+  const ASSET_IDX = { asset_civil_life:0, asset_track_life:1, asset_rs_life:2, asset_it_life:3 };
   function syncInputsFromParams(){
     Object.keys(state.params).forEach(key=>{
       const el = $('s_'+key);
       if (el){ el.value = state.params[key]; $('o_'+key).textContent = state.params[key]; }
     });
+    Object.keys(ASSET_IDX).forEach(id=>{
+      const el = $('s_'+id);
+      if (el){ const life = state.params.assets[ASSET_IDX[id]].life; el.value = life; $('o_'+id).textContent = life; }
+    });
+    const chk = $('chkDeclining');
+    if (chk) chk.checked = !!state.params.declining_rate;
   }
   function loadPreset(id){
     const P = PRESETS[id];
@@ -768,26 +803,22 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     syncInputsFromParams(); render();
   }
   function renderBreakdown(w){
-    const b=w.benefits, c=w.costs, d=w.demand;
+    const m=w.matureYear, b=m.benefits;
     $('breakdown').innerHTML =
-      `Ridership: <b>${d.R.toFixed(1)}k</b>/day (load factor ${d.load.toFixed(2)}, crowding mult ${d.phi.toFixed(2)}). `+
-      `Farebox recovery ${w.FRR.toFixed(0)}%.<br>`+
-      `Benefits: CS ${fmtM(b.CS)} · congestion ${fmtM(b.congestion)} · Mohring ${fmtM(b.mohring)} · `+
-      `accident ${fmtM(b.accident)} · emissions ${fmtM(b.emissions)} · labor ${fmtM(b.labor)} · `+
-      `crowding ${fmtM(b.crowdingDisamenity)} · agglomeration ${fmtM(b.agglomeration)} = <b>${fmtM(b.total)}</b>.<br>`+
-      `Costs: annualized capital ${fmtM(c.annualizedCapital)} · `+
-      `operating ${c.opNet<0?'deficit '+fmtM(-c.opNet):'surplus offset '+fmtM(c.surplusOffset)} · `+
-      `MCPF deadweight ${fmtM(c.mcpfDeadweight)} = net <b>${fmtM(w.netCostWithMCPF)}</b>.`;
+      `<b>Mature year</b> (year ${state.params.ramp_years}): ridership ${m.demand.R.toFixed(1)}k/day, load ${m.demand.load.toFixed(2)}, farebox ${m.FRR.toFixed(0)}%. `+
+      `Crowding is costing riders ≈ ${fmtM(b.crowdingInCS)} of surplus (already inside CS, not added separately).<br>`+
+      `Benefits (mature yr): CS ${fmtM(b.CS)} · congestion ${fmtM(b.congestion)} · Mohring ${fmtM(b.mohring)} · accident ${fmtM(b.accident)} · emissions ${fmtM(b.emissions)} · labour ${fmtM(b.labor)} · agglomeration ${fmtM(b.agglomeration)} = <b>${fmtM(b.total)}</b>/yr.<br>`+
+      `Lifecycle (PV over ${state.params.horizon} yr @ ${(state.params.discount_rate*100).toFixed(1)}%): PV benefits <b>${fmtM(w.pvBenefits)}</b> · PV capital+renewals net of residual ${fmtM(w.pvCapex)} · residual credit ${fmtM(w.residual)} · MCPF deadweight ${fmtM(w.mcpfPV)} · PV net cost <b>${fmtM(w.pvNetCost)}</b> · <b>NPV ${fmtM(w.npv)}</b>.`;
   }
   function render(){
-    const w = TBCR.computeWelfare(state.params, state.ref);
-    $('cB').textContent = fmtM(w.B);
-    $('cC').textContent = fmtM(w.netCostWithMCPF);
-    const bcrEl = $('cBCR');
-    bcrEl.textContent = isFinite(w.BCR)? w.BCR.toFixed(2) : '∞';
-    bcrEl.style.color = w.BCR>=1.5?'var(--green)': w.BCR>=1.0?'var(--amber)':'var(--red)';
+    const w = TBCR.computeLifecycle(state.params, state.ref);
+    $('cNPV').textContent = fmtM(w.npv);
+    const bcrEl = $('cBCR'); bcrEl.textContent = isFinite(w.bcrPV)? w.bcrPV.toFixed(2) : '∞';
+    bcrEl.style.color = w.bcrPV>=1.5?'var(--green)': w.bcrPV>=1.0?'var(--amber)':'var(--red)';
+    $('cPV').textContent = fmtM(w.pvBenefits)+' / '+fmtM(w.pvNetCost);
+    $('ratestrip').textContent = 'BCR vs discount rate → ' + w.rateSens.map(s=>`${(s.r*100).toFixed(0)}%: ${isFinite(s.bcr)?s.bcr.toFixed(2):'∞'}`).join('  ·  ');
     renderBreakdown(w);
-    if (window.__updateCharts) window.__updateCharts(w);   // defined in Task 11
+    if (window.__updateCharts) window.__updateCharts(w);
   }
   function initPresets(){
     const sel = $('preset');
@@ -833,6 +864,9 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   $('btnImport').addEventListener('click', doImport);
   document.querySelectorAll('[data-opt]').forEach(b=> b.addEventListener('click', ()=>runOptimize(b.dataset.opt)));
   buildSliders(); initPresets(); loadPreset('us_lrt');
+  Object.keys(ASSET_IDX).forEach(id=>{ const el=$('s_'+id); if(el){ el.value = state.params.assets[ASSET_IDX[id]].life; $('o_'+id).textContent=el.value;
+    el.addEventListener('input', e=>{ state.params.assets[ASSET_IDX[id]].life = parseFloat(e.target.value); $('o_'+id).textContent=e.target.value; render(); }); } });
+  $('chkDeclining').addEventListener('change', e=>{ state.params.declining_rate = e.target.checked; render(); });
 }
 </script>
 
