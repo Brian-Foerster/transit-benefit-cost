@@ -416,9 +416,23 @@ window.TBCR_IO = (function () {
       // assets/declining_rate are validated in place (not deferred) so the output key order
       // mirrors the source object — required for JSON.stringify round-trip idempotency.
       if (k === 'assets') {
-        if (Array.isArray(src.assets) && src.assets.every(a => a && isFinite(a.share) && isFinite(a.life))) {
-          params.assets = src.assets.map(a => ({ share: a.share, life: a.life }));
-        } else { params.assets = window.TBCR.DEFAULT_ASSETS.map(a => ({ ...a })); warnings.push('invalid assets replaced with default'); }
+        // Always normalize to exactly 4 classes (UI/capexSchedule index assets[0..3]), each
+        // clamped to a sane range — a pasted scenario with e.g. life<=0 would otherwise
+        // infinite-loop capexSchedule, and a length!=4 array would crash the UI.
+        const DEF = window.TBCR.DEFAULT_ASSETS;
+        const ain = Array.isArray(src.assets) ? src.assets : null;
+        params.assets = DEF.map((d, i) => {
+          const a = ain && ain[i];
+          let share = (a && isFinite(a.share)) ? a.share : d.share;
+          let life  = (a && isFinite(a.life))  ? a.life  : d.life;
+          if (share < 0) { warnings.push(`asset ${i} share clamped to 0`); share = 0; }
+          if (share > 1) { warnings.push(`asset ${i} share clamped to 1`); share = 1; }
+          if (life < 5)   { warnings.push(`asset ${i} life clamped to 5`); life = 5; }
+          if (life > 120) { warnings.push(`asset ${i} life clamped to 120`); life = 120; }
+          return { share, life };
+        });
+        if (ain && ain.length !== 4) warnings.push('assets normalized to 4 classes');
+        if ('assets' in src && !ain) warnings.push('invalid assets replaced with default');
         return;
       }
       if (k === 'declining_rate') { params.declining_rate = !!src.declining_rate; return; }
@@ -737,6 +751,17 @@ window.TBCR_IO = (function () {
       T.ok('v2 sweep: no crowdingDisamenity/direct keys — '+id, !('crowdingDisamenity' in b) && !('direct' in b));
     });
   }
+  // final-review fixes: assets import hardening
+  {
+    const P = PRESETS.us_lrt;
+    const bad = TBCR_IO.parseState({ version:2, params:{ ...P.params, assets:[{share:0.55,life:0}] }, referencePoint:P.ref });
+    T.ok('import normalizes to 4 assets', bad.params.assets.length === 4);
+    T.ok('import clamps life>0', bad.params.assets.every(a => a.life >= 5));
+    T.ok('import warns on asset normalization', bad.warnings.some(w=>/asset|normal/i.test(w)));
+    const neg = TBCR_IO.parseState({ version:2, params:{ ...P.params, assets:[{share:-1,life:200},{share:2,life:10},{share:0.15,life:30},{share:0.05,life:12}] }, referencePoint:P.ref });
+    T.ok('import clamps share to [0,1]', neg.params.assets.every(a => a.share>=0 && a.share<=1));
+    T.ok('import clamps life to [5,120]', neg.params.assets.every(a => a.life>=5 && a.life<=120));
+  }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
@@ -783,8 +808,8 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     dt:'Door-to-door minutes saved versus the traveler’s next-best option. The heart of consumer surplus — usually the single largest benefit. Typical: 5–20 min.',
     VOT:'How much riders value an hour of travel time. Typical: US DOT ~$18 for local trips; commuters ~$25–30; low-income riders ~$10–12. The most consequential benefit parameter.',
     alpha:'Fraction of riders who would otherwise have driven — only these diverted trips create congestion, accident, and emissions savings. Typical: ~0.30 for a mixed corridor; ~0.15 for transit-dependent riders; up to ~0.50 where it pulls car commuters.',
-    gamma:'Wider productivity gains from better labor-market access, as a % uplift on direct benefits. Typical: ~0% (standard US appraisal), ~24–25% (UK / Elizabeth Line), up to ~48% (Stockholm). Include only as much as you trust the estimates.',
-    K:'Total construction cost, annualized over 30 years at 4%. Usually the dominant cost and the biggest swing factor in the BCR. Typical: ~$1–1.5B per 10 km (international best practice); US LRT often $3–6B; regional megaprojects far more.',
+    gamma:'Wider productivity gains from better labor-market access, as a % uplift on user benefits (consumer surplus + the Mohring effect) only — externality lines and labour are not marked up. Typical: ~0% (standard US appraisal), ~24–25% (UK / Elizabeth Line), up to ~48% (Stockholm). Include only as much as you trust the estimates.',
+    K:'Total construction cost. Usually the dominant cost and the biggest swing factor in the BCR — spread across its build and renewal schedule by asset class and discounted, not a fixed annuity. Typical: ~$1–1.5B per 10 km (international best practice); US LRT often $3–6B; regional megaprojects far more.',
     H_train:'Total hours of train service run per day across the line. More service shortens waits (raising ridership) but raises operating cost. Typical: 100–300 for an LRT line.',
     V:'Cars per train. With seats/vehicle it sets capacity, and it scales operating cost. Typical: 2–4 for LRT, 6–10 for metro/regional.',
     c_op:'Operating cost per vehicle-hour — crews, energy, maintenance. Typical: US LRT median ~$150–200; some systems >$250.',
@@ -850,7 +875,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   }
   function loadPreset(id){
     const P = PRESETS[id];
-    state.params = { ...P.params };
+    state.params = { ...P.params, assets: P.params.assets.map(a => ({ ...a })) };
     state.ref = TBCR.calibrateRef(P.params, P.ref);
     const info = $('presetinfo');
     if (info) info.innerHTML = `<strong>${P.label}.</strong> ${P.about || ''}`;
@@ -948,10 +973,10 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
         {type:'bar',label:'Benefits',data:[],yAxisID:'y'},
         {type:'bar',label:'Operating cost',data:[],yAxisID:'y'},
         {type:'bar',label:'Capex',data:[],yAxisID:'y'},
-        {type:'line',label:'Cumulative NPV',data:[],yAxisID:'y1',pointRadius:0,borderWidth:2},
+        {type:'line',label:'Cumulative discounted cash flow (excl. MCPF)',data:[],yAxisID:'y1',pointRadius:0,borderWidth:2},
       ]}, options:{ animation:false,
         scales:{ y:{ position:'left', title:{display:true,text:'$M / yr'} },
-                 y1:{ position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Cumulative NPV ($M)'} } },
+                 y1:{ position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Cumulative discounted cash flow ($M)'} } },
         plugins:{title:{display:true,text:'Discounted cash flow by year'}} } }),
       demand: new Chart($('chDemand'), { type:'line', data:{labels:[],datasets:[{label:'Ridership (000s/day)',data:[],pointRadius:0}]},
         options: lineOpts('Demand curve: mature-year ridership vs fare') }),
@@ -972,7 +997,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     const benefitsArr=[], opCostArr=[], capexArr=[], npvArr=[];
     for (const y of w.byYear){
       benefitsArr.push(y.benefits); opCostArr.push(y.opCost); capexArr.push(y.capex);
-      cum += (y.benefits - y.opCost - y.capex) * y.disc;
+      cum += (y.benefits - (y.opCost - y.fareRev) - y.capex) * y.disc;
       npvArr.push(cum);
     }
     charts.cashflow.data.labels = labels;
