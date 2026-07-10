@@ -66,7 +66,7 @@
     <div class="optbtns">
       <button id="btnOptBCR">Maximize NPV (fare + service)</button>
     </div>
-    <div class="opthint">Jointly picks the fare and daily train-hours that maximize net present value (total discounted benefits minus costs), then moves both sliders. NPV rewards total welfare, not bang-per-dollar, so it favours larger, well-used systems.</div>
+    <div class="opthint">Picks the fare and daily train-hours that maximize net present value (discounted benefits minus costs), and moves both sliders.</div>
   </div>
   <div id="warn"></div>
   <div class="cards">
@@ -101,25 +101,25 @@
     <p><strong>Benefits</strong> (annual social value created, then summed as a PV):</p>
     <ul>
       <li><strong>CS — consumer surplus:</strong> the value of time saved by riders versus their next-best option (ridership × minutes saved × value of time). Usually the largest benefit. Falls if fares rise; also falls as trains get more crowded, because crowding lengthens the generalized (perceived) travel time that CS is built from.</li>
-      <li><strong>Crowding — embedded in CS, not a separate line:</strong> there is no standalone crowding deduction. The crowding penalty is already baked into CS through the generalized-time multiplier φ. The <em>"crowding embedded in CS"</em> figure shown in the breakdown is a diagnostic only — it reports how much of CS is being eaten by crowding discomfort (riders' surplus versus an uncrowded trip); it is not added or subtracted again.</li>
-      <li><strong>Congestion:</strong> road congestion avoided by the trips that would otherwise have been driven (diverted trips × trip miles × a per-mile congestion cost). Only diverted-car trips count. Not marked up by agglomeration.</li>
+      <li><strong>Crowding — inside CS, not a separate line:</strong> the crowding penalty is already counted within consumer surplus. The "crowding embedded in CS" figure in the breakdown is just a diagnostic — how much surplus crowding is costing riders — not an extra deduction.</li>
+      <li><strong>Congestion:</strong> road congestion avoided by the trips that would otherwise have been driven (diverted trips × trip miles × a per-mile congestion cost). Only diverted-car trips count.</li>
       <li><strong>Mohring:</strong> the “more riders → more service → shorter waits for everyone” effect. Valued as a fixed share of consumer surplus (default 18%).</li>
-      <li><strong>Accident:</strong> crashes avoided by removing car trips from the road (diverted trips × miles × a per-mile external accident cost). Not marked up by agglomeration.</li>
-      <li><strong>Emissions:</strong> CO₂ and local air pollution avoided by those same diverted car trips, escalated over time if a carbon-price growth rate is set. Not marked up by agglomeration.</li>
-      <li><strong>Labor:</strong> a small labor-market gain — cheaper commuting slightly offsets the income-tax drag on working. Valued as a share of consumer surplus (default 5%). Not marked up by agglomeration.</li>
-      <li><strong>Agglomeration:</strong> wider productivity gains from better labor-market access. Applied as a % uplift <strong>only on user benefits (CS + Mohring)</strong> — it does <em>not</em> mark up congestion, accident, emissions, or labor. Those externalities and the labor term accrue directly to third parties or the tax base and are not re-priced by agglomeration economies the way commuters' own time savings are.</li>
+      <li><strong>Accident:</strong> crashes avoided by removing car trips from the road (diverted trips × miles × a per-mile external accident cost).</li>
+      <li><strong>Emissions:</strong> CO₂ and local air pollution avoided by those same diverted car trips, escalated over time if a carbon-price growth rate is set.</li>
+      <li><strong>Labor:</strong> a small labor-market gain — cheaper commuting slightly offsets the income-tax drag on working. Valued as a share of consumer surplus (default 5%).</li>
+      <li><strong>Agglomeration:</strong> wider productivity gains from better job access. Applied as a % uplift on user benefits (CS + Mohring) only — not on the externality lines or labor.</li>
     </ul>
     <p><strong>Costs</strong> (converted to present values over the horizon):</p>
     <ul>
       <li><strong>PV capital + renewals, net of residual:</strong> each asset class (civil works, track/systems, rolling stock, fare/IT) is capitalized when built and re-capitalized on schedule whenever it reaches the end of its useful life within the horizon. Assets with remaining useful life left at the end of the horizon contribute a residual value credit that reduces PV cost — see "Residual value" below.</li>
       <li><strong>PV operating subsidy:</strong> the present value of annual operating cost minus fare revenue, summed only over years where it is a net deficit (years with a surplus offset capital cost instead of adding to it).</li>
       <li><strong>PV MCPF (marginal cost of public funds):</strong> the present value of the extra economic loss from raising the subsidy through distortionary taxes — the shadow price above $1 per subsidy dollar, applied to the PV subsidy.</li>
-      <li><strong>No depreciation line:</strong> the model does not annualize capital with a separate depreciation charge (that was the v1 approach). In this discounted-lifecycle model, discounting itself supplies the economic depreciation — a dollar of capital spent today is compared against benefits received in future years purely through the discount factor, so no additional depreciation schedule is needed or applied.</li>
+      <li><strong>No depreciation line:</strong> capital is counted when it's spent and then discounted, so there's no separate depreciation charge.</li>
     </ul>
     <p><strong>Time &amp; asset parameters</strong> (each shifts the PV calculation, not just one year):</p>
     <ul>
       <li><strong>Horizon:</strong> the number of years of costs and benefits included in the present-value sum (default 60). Longer horizons capture more mature-year benefit but also more renewal capex; residual value at the horizon's end offsets the truncation.</li>
-      <li><strong>Discount rate:</strong> the annual rate used to convert future-year dollars to present value (default 4%). Higher discount rates shrink the value of distant benefits and renewals faster than near-term ones, which tends to lower the BCR since benefits ramp in gradually while much of the capital cost lands up front.</li>
+      <li><strong>Discount rate:</strong> the annual rate used to convert future dollars to present value (default 4%). Higher rates shrink distant benefits faster, which tends to lower the BCR.</li>
       <li><strong>Ridership ramp:</strong> ridership does not jump to its full modeled level in year 1 — it starts at a fraction of the mature level (default 60%) and rises linearly to 100% over the ramp period (default 5 years), reflecting real opening-year ridership build-up.</li>
       <li><strong>Residual value:</strong> the credit applied at the end of the horizon for any asset class whose last-built tranche still has useful life remaining (e.g., civil works with an 80-year life inside a 60-year horizon). It is subtracted from PV capital cost, so a longer-lived asset mix or a shorter horizon raises the residual credit and improves the BCR.</li>
     </ul>
@@ -902,40 +902,40 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   const fmtM = x => (x<0?'-':'') + (Math.abs(x)>=1000 ? '$'+(Math.abs(x)/1000).toFixed(2)+'B' : '$'+Math.abs(x).toFixed(1)+'M');
   const fmtSlider = (key, v) => key === 'rider_income' ? Number(v).toLocaleString('en-US') : v;   // thousands separator for income
   const HELP = {
-    R:'Average weekday boardings on the line, in thousands. Drives every benefit — more riders means more time savings, more diverted car trips, and more fare revenue. Typical: 20–80k for an LRT line, hundreds of thousands for a major metro.',
-    f:'Average fare paid per trip. Raising it sheds riders (via the fare elasticity) and lifts revenue; the optimizer solves for the net welfare effect. Typical US transit: $1.50–$3.00.',
-    dt:'Door-to-door minutes saved versus the traveler’s next-best option. The heart of consumer surplus — usually the single largest benefit. Typical: 5–20 min.',
-    VOT:'How much riders value an hour of travel time. Typical: US DOT ~$18 for local trips; commuters ~$25–30; low-income riders ~$10–12.',
-    rider_income:'Median annual income of the LINE’S RIDERS (not the area). Value of time is derived from it: VOT = (% of wage) × income / 2080 work-hrs. This is the equity lever — transit riders often earn well below the area median (e.g. ~$50–75k where the county median is ~$116k in Orange County), which lowers VOT and the measured benefits. Default reproduces each preset’s original VOT.',
-    vot_fraction:'Fraction of the hourly wage used to value travel time. Standard (Cal-B/C / US DOT): ~0.5 for the commute, ~0.35 for leisure. Multiplied by the hourly wage (income/2080) to get the value of time.',
-    line_length:'Full route length (miles), end to end. Used to compute service from first principles: a train ties up its whole round trip, so on a longer line the same daily train-hours buy a LOWER frequency → longer waits and less peak capacity. Typical: ~8–15 mi for an LRT line, 30–60+ mi for a regional metro. (Average trip length — 8 mi — is a separate, shorter quantity used for in-vehicle time.)',
-    alpha:'Fraction of riders who would otherwise have driven — only these diverted trips create congestion, accident, and emissions savings. Typical: ~0.30 for a mixed corridor; ~0.15 for transit-dependent riders; up to ~0.50 where it pulls car commuters.',
-    gamma:'Wider productivity gains from better labor-market access, as a % uplift on user benefits (consumer surplus + the Mohring effect) only — externality lines and labour are not marked up. Typical: ~0% (standard US appraisal), ~24–25% (UK / Elizabeth Line), up to ~48% (Stockholm). Include only as much as you trust the estimates.',
-    K:'Total construction cost. Usually the dominant cost and the biggest swing factor in the BCR — spread across its build and renewal schedule by asset class and discounted, not a fixed annuity. Typical: ~$1–1.5B per 10 km (international best practice); US LRT often $3–6B; regional megaprojects far more.',
-    H_train:'Total hours of train service run per day across the line. More service shortens waits (raising ridership) but raises operating cost. Typical: 100–300 for an LRT line.',
-    V:'Cars per train. With seats/vehicle it sets capacity, and it scales operating cost. Typical: 2–4 for LRT, 6–10 for metro/regional.',
-    c_op:'Operating cost per vehicle-hour — crews, energy, maintenance. Typical: US LRT median ~$150–200; some systems >$250.',
-    avg_speed:'Average end-to-end speed including stops. Sets in-vehicle time for the 8-mile trip; faster service lowers generalized cost and lifts demand. Typical: 15–25 mph for LRT, 30–35 for express/regional metro.',
-    service_span_hrs:'Hours per day the line runs. With train-hours it sets peak frequency, and therefore capacity and crowding. Typical: 18–20 hours.',
-    eps_f:'% change in ridership per 1% change in fare. Default −0.6 (a sensible long-run value; short-run is ~−0.3, long-run roughly doubles it). Transit is inelastic (above −1), so revenue keeps rising with fare — but the BCR-maximizing fare is still interior. Below −1 (elastic) is unusual for transit.',
-    eps_t:'% change in ridership per 1% change in generalized travel time (in-vehicle + wait, crowding-weighted). Typical: −0.4 to −0.9. More negative = riders more sensitive to service quality.',
-    lambda:'Marginal cost of public funds: the deadweight loss per dollar of subsidy raised through distortionary taxes. Typical: 1.1–1.5 (1.3 default). 1.0 = costless public money; 1.3 = each subsidy dollar costs society $1.30.',
-    seats_per_vehicle:'Comfortable (seated) capacity per car. With frequency and cars/train it sets total capacity; loads above it start the crowding penalty. Typical: LRT ~150, metro/regional ~200–250.',
-    peak_hour_share:'Fraction of daily riders in the single busiest hour and direction — higher concentration means worse peak crowding. Typical: 0.12–0.20 (~0.17 for a commuter-oriented US line).',
-    phi_crush:'How much longer in-vehicle time “feels” at crush loading (reached at ~2.5× seated capacity). Typical: 1.5–2.0; 1.8 means a crush-loaded train is valued like an 80%-longer trip. Sets the severity of the crowding penalty.',
-    mc_pax:'Short-run marginal cost of carrying one more passenger-trip: operating resource cost (energy, wear, fare handling ~$0.20) plus the boarding/dwell-delay externality that each boarding imposes on everyone else (~$0.40 on a quiet line to ~$1.50 on a busy one). Default $0.75. It deliberately EXCLUDES in-vehicle crowding, which the model already counts as a rider disamenity in consumer surplus — including it here would double-count. Without this term the marginal passenger costs nothing, so the optimizer drives fares to the floor.',
-    mohring_coef:'The Mohring (“more riders → more service → shorter waits for everyone”) effect, valued as a share of consumer surplus. Typical: 0.15–0.20 (0.18 default).',
-    labor_coef:'A small labor-market gain — cheaper commuting slightly offsets the income-tax drag on working — valued as a share of consumer surplus. Typical: 0.03–0.08 (0.05 default).',
-    horizon:'Years of costs and benefits included in the present-value calculation. Longer horizons reward durable assets (via residual value); default 60 for heavy rail.',
-    discount_rate:'The annual rate used to convert future costs and benefits into present value. Higher rates discount distant years more heavily, favoring short-lived, quick-payoff projects. Typical: 3–7%; 4% default (roughly the US OMB social discount rate).',
-    ramp_start:'Ridership at opening, as a fraction of the eventual mature-year level. Most new lines open well below their long-run ridership. Typical: 0.5–0.7 (0.6 default).',
-    ramp_years:'Years from opening until ridership reaches its mature (long-run) level. Typical: 3–7 years.',
-    growth:'Compounding annual growth in ridership after the line matures, on top of the ramp-up. Typical: 0–1.5%/yr for a stable metro area.',
-    carbon_growth:'Compounding annual growth in the per-mile value of avoided emissions (e.g. rising carbon prices). Typical: 0–3%/yr; 0 assumes today’s carbon values hold flat.',
-    asset_civil_life:'Useful life of tunnels, guideway, stations, and other civil works before they need full replacement. The longest-lived asset class — sets most of the residual value at the end of the horizon. Typical: 60–100 years.',
-    asset_track_life:'Useful life of track, signaling, and traction-power systems before renewal. Typical: 25–35 years.',
+    R:'Average weekday boardings on the line, in thousands. Typical: 20–80k for an LRT line, hundreds of thousands for a major metro.',
+    f:'Average fare paid per trip. Higher fares mean fewer riders but more revenue. Typical US transit: $1.50–$3.00.',
+    dt:'Door-to-door minutes saved versus the next-best option. The single biggest benefit. Typical: 5–20 min.',
+    VOT:'How much riders value an hour of travel time. Typical: ~$18 for local trips; commuters ~$25–30; low-income riders ~$10–12.',
+    rider_income:'Median annual income of the line’s riders (not the area). It sets the value of time, so it’s the equity lever: transit riders often earn below the area median, which lowers measured benefits. Typical: $40–90k.',
+    vot_fraction:'Share of the hourly wage used to value travel time. Typical: ~0.5 for commuting, ~0.35 for leisure.',
+    line_length:'Full route length (miles). A longer line ties up each train longer per round trip, so the same train-hours give lower frequency and longer waits. Typical: ~8–15 mi (LRT), 30–60+ mi (regional metro).',
+    alpha:'Fraction of riders who would otherwise have driven — only these create congestion, accident, and emissions savings. Typical: ~0.30 mixed corridor; ~0.15 transit-dependent; up to ~0.50 pulling car commuters.',
+    gamma:'Wider productivity gains from better job access, as a % uplift on rider benefits. Typical: ~0% (US practice), ~24% (UK), up to ~48% (Stockholm). Use only as much as you trust the estimate.',
+    K:'Total construction cost — usually the dominant cost and the biggest swing factor in the result. Typical: ~$1–1.5B per 10 km (best practice); US LRT $3–6B; megaprojects far more.',
+    H_train:'Total hours of train service run per day. More service shortens waits and raises ridership, but costs more to run. Typical: 100–300 for an LRT line.',
+    V:'Cars per train. Sets capacity (with seats/car) and scales operating cost. Typical: 2–4 for LRT, 6–10 for metro/regional.',
+    c_op:'Operating cost per vehicle-hour — crews, energy, maintenance. Typical: US LRT ~$150–200; some systems >$250.',
+    avg_speed:'Average end-to-end speed including stops. Faster service is more attractive and cheaper per trip. Typical: 15–25 mph (LRT), 30–35 (express/regional).',
+    service_span_hrs:'Hours per day the line runs. Typical: 18–20 hours.',
+    eps_f:'% change in ridership per 1% change in fare. Transit is inelastic: ~−0.3 short-run, ~−0.6 long-run (default). Below −1 (elastic) is unusual for transit.',
+    eps_t:'% change in ridership per 1% change in travel time (in-vehicle + wait). Typical: −0.4 to −0.9. More negative = riders more sensitive to service quality.',
+    lambda:'Marginal cost of public funds — the extra economic loss per subsidy dollar raised through taxes. Typical: 1.1–1.5 (1.3 default); 1.0 = costless public money.',
+    seats_per_vehicle:'Comfortable (seated) capacity per car. Typical: LRT ~150, metro/regional ~200–250.',
+    peak_hour_share:'Fraction of daily riders in the single busiest hour and direction — higher means worse peak crowding. Typical: 0.12–0.20.',
+    phi_crush:'How much longer a crush-loaded train “feels” — 1.8 = valued like an 80%-longer trip. Typical: 1.5–2.0.',
+    mc_pax:'Cost of carrying one more passenger: operating resource cost plus the small delay each boarding adds for everyone else. Typical: ~$0.20 (quiet) to ~$1.50 (busy); $0.75 default.',
+    mohring_coef:'The “more riders → more service → shorter waits for everyone” effect, as a share of consumer surplus. Typical: 0.15–0.20 (0.18 default).',
+    labor_coef:'A small labor-market gain from cheaper commuting, as a share of consumer surplus. Typical: 0.03–0.08 (0.05 default).',
+    horizon:'Years of costs and benefits included in the present-value total. Typical: 40–60 for heavy rail (60 default).',
+    discount_rate:'Rate used to convert future dollars to present value. Higher rates penalize distant benefits. Typical: 3–7% (4% default).',
+    ramp_start:'Ridership at opening, as a fraction of the mature-year level. Most lines open well below their long-run ridership. Typical: 0.5–0.7 (0.6 default).',
+    ramp_years:'Years from opening until ridership reaches its mature level. Typical: 3–7 years.',
+    growth:'Annual ridership growth after the line matures. Typical: 0–1.5%/yr.',
+    carbon_growth:'Annual growth in the value of avoided emissions (rising carbon prices). Typical: 0–3%/yr; 0 holds today’s values flat.',
+    asset_civil_life:'Useful life of tunnels, guideway, and stations before full replacement — the longest-lived assets. Typical: 60–100 years.',
+    asset_track_life:'Useful life of track, signaling, and power systems before renewal. Typical: 25–35 years.',
     asset_rs_life:'Useful life of rolling stock (railcars) before replacement. Typical: 25–35 years.',
-    asset_it_life:'Useful life of fare-collection and IT/communications equipment before replacement — the shortest-lived, most frequently renewed asset class. Typical: 10–15 years.',
+    asset_it_life:'Useful life of fare and IT equipment before replacement — renewed most often. Typical: 10–15 years.',
   };
 
   function buildSliders(){
