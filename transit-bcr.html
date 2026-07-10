@@ -277,7 +277,11 @@
     const yparams = { ...params, carbonFactor: carbonFactor(t, params) };
     const demand = computeDemand(yparams, yref);
     const benefits = computeBenefits(yparams, demand, yref);
-    const opCost = (params.c_op * params.H_train * params.V * CONST.OPERATING_DAYS) / 1e6;
+    // Operating cost = service cost (train-hours) + a marginal cost per passenger-trip
+    // (mc_pax: operating resource cost + boarding/dwell-delay externality; EXCLUDES in-vehicle
+    // crowding, which is already counted as a rider disamenity inside consumer surplus).
+    const opCost = (params.c_op * params.H_train * params.V * CONST.OPERATING_DAYS) / 1e6
+      + (params.mc_pax ?? 0) * demand.R * 1000 * CONST.OPERATING_DAYS / 1e6;
     const fareRev = (demand.R * 1000 * CONST.OPERATING_DAYS * params.f) / 1e6;
     const opNet = fareRev - opCost;
     const FRR = opCost > 0 ? (fareRev / opCost) * 100 : 0;
@@ -347,10 +351,10 @@
 window.PRESETS = {
   us_lrt: {
     label: 'US LRT baseline',
-    citation: 'Source-doc defaults; US NTD medians. Mature-year benefits (lambda=1, phi=1) ~$72.9M. As shipped (60-yr lifecycle, 4% discount, MCPF+crowding on): NPV ~-$0.75B, PV-BCR ~0.69.',
-    about: 'The reference case — a ~10 km light-rail line in a ~1M metro, moderate on every dimension (40k riders, $1.5B, $38k per daily rider). Over a 60-year discounted lifecycle it shows NPV ≈ −$0.75B and PV-BCR ≈ 0.69, with MCPF (1.30) and crowding on — a marginal, subsidy-heavy project. It is the fixed regression anchor the whole model is calibrated against; long-run fare elasticity −0.6.',
+    citation: 'Source-doc defaults; US NTD medians. Mature-year benefits (lambda=1, phi=1) ~$72.9M. As shipped (60-yr lifecycle, 4% discount, MCPF + crowding + $0.75/trip marginal passenger cost on): NPV ~-$1.01B, PV-BCR ~0.62.',
+    about: 'The reference case — a ~10 km light-rail line in a ~1M metro, moderate on every dimension (40k riders, $1.5B, $38k per daily rider). Over a 60-year discounted lifecycle it shows NPV ≈ −$1.01B and PV-BCR ≈ 0.62, with MCPF (1.30), crowding, and a $0.75/passenger marginal cost on — a marginal, subsidy-heavy project. It is the fixed regression anchor the whole model is calibrated against; long-run fare elasticity −0.6.',
     params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.25, K:1.5,
-      H_train:150, V:3, c_op:180, f:1.75, lambda:1.30,
+      H_train:150, V:3, c_op:180, f:1.75, lambda:1.30, mc_pax:0.75,
       eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
@@ -362,9 +366,9 @@ window.PRESETS = {
   elizabeth_line: {
     label: 'Elizabeth Line (London)',
     citation: 'Crossrail ~£19B; ~600k trips/day design capacity; Centre for Cities high agglomeration; congestion-priced city.',
-    about: 'The megaproject that scale justifies — enormous capital ($24B) but enormous ridership (~600k/day), big time savings, and strong agglomeration (35%) in a congestion-priced city. Over the 60-year discounted lifecycle: NPV ≈ +$29B, PV-BCR ≈ 1.83 — the long-life civil assets (residual value) and productivity gains carry the huge capital. Costly, but it pays.',
+    about: 'The megaproject that scale justifies — enormous capital ($24B) but enormous ridership (~600k/day), big time savings, and strong agglomeration (35%) in a congestion-priced city. Over the 60-year discounted lifecycle: NPV ≈ +$25B, PV-BCR ≈ 1.64 — the long-life civil assets (residual value) and productivity gains carry the huge capital. Costly, but it pays.',
     params: { R:600, dt:20, VOT:28, alpha:0.20, gamma:0.35, K:24,
-      H_train:530, V:9, c_op:320, f:3.00, lambda:1.30,
+      H_train:530, V:9, c_op:320, f:3.00, lambda:1.30, mc_pax:0.75,
       eps_f:-0.60, eps_t:-0.55, avg_speed:33, seats_per_vehicle:250,
       peak_hour_share:0.17, peak_direction_share:0.62, load_comfort:0.85,
       phi_crush:1.8, service_span_hrs:19,
@@ -376,9 +380,9 @@ window.PRESETS = {
   stockholm_tbana: {
     label: 'Stockholm T-bana',
     citation: 'Borjesson et al. 2020: wider economic impacts ~48% of user benefits; high farebox recovery.',
-    about: 'The flagship winner — efficient capital (~$23k per daily rider), high farebox recovery, comfortable loads (no crush), and the highest agglomeration uplift here (48%, per Borjesson et al.). An operating surplus offsets part of the capital. Over the 60-year lifecycle: NPV ≈ +$5.8B, PV-BCR ≈ 2.60 — the case where urban rail clearly pays for itself.',
+    about: 'The flagship winner — efficient capital (~$23k per daily rider), high farebox recovery, comfortable loads (no crush), and the highest agglomeration uplift here (48%, per Borjesson et al.). An operating surplus offsets part of the capital. Over the 60-year lifecycle: NPV ≈ +$4.9B, PV-BCR ≈ 2.10 — the case where urban rail clearly pays for itself.',
     params: { R:130, dt:14, VOT:24, alpha:0.35, gamma:0.48, K:3.0,
-      H_train:340, V:6, c_op:160, f:3.50, lambda:1.30,
+      H_train:340, V:6, c_op:160, f:3.50, lambda:1.30, mc_pax:0.75,
       eps_f:-0.60, eps_t:-0.60, avg_speed:22, seats_per_vehicle:160,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:19,
@@ -390,9 +394,9 @@ window.PRESETS = {
   high_cost_us: {
     label: 'High-cost US project',
     citation: 'US megaproject cost profile (~$80k per daily rider); agglomeration excluded per FTA practice.',
-    about: 'The cost-disease cautionary tale — megaproject capital ($6B, ~$80k per daily rider) on a corridor whose ridership (75k) and benefits are ordinary, with agglomeration ignored (10%, standard US appraisal). Over the 60-year lifecycle: NPV ≈ −$6.9B, PV-BCR ≈ 0.31 — the money went into construction, not outcomes. Levy’s point in one preset: cost control matters far more than the funding mechanism.',
+    about: 'The cost-disease cautionary tale — megaproject capital ($6B, ~$80k per daily rider) on a corridor whose ridership (75k) and benefits are ordinary, with agglomeration ignored (10%, standard US appraisal). Over the 60-year lifecycle: NPV ≈ −$7.4B, PV-BCR ≈ 0.29 — the money went into construction, not outcomes. Levy’s point in one preset: cost control matters far more than the funding mechanism.',
     params: { R:75, dt:12, VOT:20, alpha:0.30, gamma:0.10, K:6.0,
-      H_train:220, V:4, c_op:260, f:2.00, lambda:1.30,
+      H_train:220, V:4, c_op:260, f:2.00, lambda:1.30, mc_pax:0.75,
       eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:170,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
@@ -404,9 +408,9 @@ window.PRESETS = {
   low_cost_intl: {
     label: 'Low-cost international',
     citation: 'International best-practice LRT (~$1.2B/10km, ~$17k per daily rider); lean operations.',
-    about: 'International best practice — cheap capital (~$1.2B, ~$17k per daily rider), lean operations near break-even, modest fares. Nothing spectacular on any single axis, but the efficiency clears the bar over the 60-year lifecycle: NPV ≈ +$0.70B, PV-BCR ≈ 1.37. The quiet success: get costs right and a plain project still passes.',
+    about: 'International best practice — cheap capital (~$1.2B, ~$17k per daily rider), lean operations near break-even, modest fares. Nothing spectacular on any single axis, but the efficiency still clears the bar over the 60-year lifecycle: NPV ≈ +$0.24B, PV-BCR ≈ 1.10 — thinner once the marginal passenger cost is counted. The quiet success: get costs right and a plain project still passes.',
     params: { R:70, dt:12, VOT:16, alpha:0.30, gamma:0.25, K:1.2,
-      H_train:240, V:4, c_op:110, f:1.50, lambda:1.30,
+      H_train:240, V:4, c_op:110, f:1.50, lambda:1.30, mc_pax:0.75,
       eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:160,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
@@ -425,10 +429,10 @@ window.TBCR_IO = (function () {
     peak_hour_share:[0.08,0.30], peak_direction_share:[0.50,0.75], load_comfort:[0.5,1.0],
     phi_crush:[1.2,2.5], service_span_hrs:[10,24],
     horizon:[20,100], discount_rate:[0.01,0.08], ramp_start:[0.2,1.0], ramp_years:[1,20],
-    growth:[0,0.02], carbon_growth:[0,0.07], mohring_coef:[0.05,0.30], labor_coef:[0,0.15],
+    growth:[0,0.02], carbon_growth:[0,0.07], mohring_coef:[0.05,0.30], labor_coef:[0,0.15], mc_pax:[0,3],
   };
   const V2_DEFAULTS = { horizon:60, discount_rate:0.04, declining_rate:false, ramp_start:0.60,
-    ramp_years:5, growth:0, carbon_growth:0, mohring_coef:0.18, labor_coef:0.05 };
+    ramp_years:5, growth:0, carbon_growth:0, mohring_coef:0.18, labor_coef:0.05, mc_pax:0.75 };
   function serializeState(params, ref) { return { version:2, params:{ ...params }, referencePoint:{ ...ref } }; }
   function parseState(obj) {
     const warnings = [], src = (obj && obj.params) || {}, params = {};
@@ -574,8 +578,8 @@ window.TBCR_IO = (function () {
     // lifecycle NPV/BCR at shipped defaults (reference calibrated under the same params)
     const ref = TBCR.calibrateRef(P.params, P.ref);
     const w = TBCR.computeLifecycle(P.params, ref);
-    T.eq('anchor: lifecycle NPV', w.npv, -746.6, 5);
-    T.eq('anchor: lifecycle PV-BCR', w.bcrPV, 0.6929, 0.005);
+    T.eq('anchor: lifecycle NPV', w.npv, -1011.4, 5);
+    T.eq('anchor: lifecycle PV-BCR', w.bcrPV, 0.6248, 0.005);
     // every preset: finite BCR, positive PV benefits, ridership ramps up over time
     Object.keys(PRESETS).forEach(id => {
       const Pi = PRESETS[id]; const ri = TBCR.calibrateRef(Pi.params, Pi.ref);
@@ -708,7 +712,11 @@ window.TBCR_IO = (function () {
     const yM = TBCR.annualKernel(P.params, ref, 5);   // mature (ramp=1)
     T.ok('year 0 ridership below mature (ramp<1)', y0.demand.R < yM.demand.R);
     T.ok('mature benefits exceed year-0 benefits', yM.benefits.total > y0.benefits.total);
-    T.ok('opCost constant across years', Math.abs(y0.opCost - yM.opCost) < 1e-9);
+    // service part of opCost is constant; the mc_pax (per-passenger) part grows with ridership
+    const y0s = TBCR.annualKernel({ ...P.params, mc_pax:0 }, ref, 0);
+    const yMs = TBCR.annualKernel({ ...P.params, mc_pax:0 }, ref, 5);
+    T.ok('service opCost constant across years (mc_pax=0)', Math.abs(y0s.opCost - yMs.opCost) < 1e-9);
+    T.ok('with mc_pax, opCost grows with ridership', yM.opCost > y0.opCost);
     T.ok('fareRev tracks ridership', yM.fareRev > y0.fareRev);
     T.ok('FRR present', typeof yM.FRR === 'number');
   }
@@ -796,6 +804,19 @@ window.TBCR_IO = (function () {
     for (let f=0.5; f<=5.0001; f+=0.1){ const bcr=TBCR.lifecycleCore({...P.params,f},ref).bcrPV; if(bcr>best.bcr) best={f,bcr}; }
     T.ok('fare-only BCR-max is interior (not at a bound)', best.f > 0.55 && best.f < 4.95);
   }
+  // marginal cost per passenger (mc_pax): a real per-rider cost that brakes the fare floor
+  {
+    const P = PRESETS.us_lrt; const ref = TBCR.calibrateRef(P.params, P.ref);
+    const off = TBCR.lifecycleCore({ ...P.params, mc_pax:0 }, ref);
+    const on  = TBCR.lifecycleCore({ ...P.params, mc_pax:0.75 }, ref);
+    T.ok('mc_pax raises cost (lowers NPV)', on.npv < off.npv);
+    T.ok('mc_pax default matches preset', P.params.mc_pax === 0.75);
+    // with mc_pax off, the joint BCR optimum pins fare to the floor; with it on, fare lifts off
+    const oOff = TBCR.optimizeBCR({ ...P.params, mc_pax:0 }, ref, {});
+    const oOn  = TBCR.optimizeBCR({ ...P.params, mc_pax:0.75 }, ref, {});
+    T.ok('mc_pax off -> BCR-opt fare at floor', oOff.fareStar <= 0.55);
+    T.ok('mc_pax on -> BCR-opt fare lifts off the floor', oOn.fareStar > oOff.fareStar + 0.05);
+  }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
@@ -815,6 +836,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     grpService: [
       ['K','Capital cost ($B)',0.3,30,0.1],['H_train','Daily train-hours',50,1200,10],
       ['V','Vehicles per train',1,12,1],['c_op','Op cost/veh-hr ($)',80,400,5],
+      ['mc_pax','Marg. cost / passenger ($)',0,3,0.05],
       ['avg_speed','Avg speed (mph)',8,45,1],['service_span_hrs','Service span (hrs)',10,24,1],
     ],
     grpBehavior: [
@@ -855,6 +877,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     seats_per_vehicle:'Comfortable (seated) capacity per car. With frequency and cars/train it sets total capacity; loads above it start the crowding penalty. Typical: LRT ~150, metro/regional ~200–250.',
     peak_hour_share:'Fraction of daily riders in the single busiest hour and direction — higher concentration means worse peak crowding. Typical: 0.12–0.20 (~0.17 for a commuter-oriented US line).',
     phi_crush:'How much longer in-vehicle time “feels” at crush loading (reached at ~2.5× seated capacity). Typical: 1.5–2.0; 1.8 means a crush-loaded train is valued like an 80%-longer trip. Sets the severity of the crowding penalty.',
+    mc_pax:'Short-run marginal cost of carrying one more passenger-trip: operating resource cost (energy, wear, fare handling ~$0.20) plus the boarding/dwell-delay externality that each boarding imposes on everyone else (~$0.40 on a quiet line to ~$1.50 on a busy one). Default $0.75. It deliberately EXCLUDES in-vehicle crowding, which the model already counts as a rider disamenity in consumer surplus — including it here would double-count. Without this term the marginal passenger costs nothing, so the optimizer drives fares to the floor.',
     mohring_coef:'The Mohring (“more riders → more service → shorter waits for everyone”) effect, valued as a share of consumer surplus. Typical: 0.15–0.20 (0.18 default).',
     labor_coef:'A small labor-market gain — cheaper commuting slightly offsets the income-tax drag on working — valued as a share of consumer surplus. Typical: 0.03–0.08 (0.05 default).',
     horizon:'Years of costs and benefits included in the present-value calculation. Longer horizons reward durable assets (via residual value); default 60 for heavy rail.',
