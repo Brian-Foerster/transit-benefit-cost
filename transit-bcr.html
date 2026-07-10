@@ -182,19 +182,19 @@
     // spuriously inflate (GC - GC0) and drive CS negative. Rebuild it from f0 and tGen0.
     const GC0 = ref.f0 + (params.VOT / 60) * ref.tGen0;
     const CS = (CS0 - 0.5 * (ref.R0 + R) * 1000 * D * (demand.GC - GC0)) / 1e6;
+    // A1 diagnostic (non-additive): surplus that crowding is costing riders vs an uncrowded trip.
+    // GC0 cancels: crowdingInCS = 0.5(R0+R)*1000*D*(VOT/60)*(phi-1)*tIvt / 1e6  >= 0
+    const crowdingInCS = (0.5 * (ref.R0 + R) * 1000 * D * (params.VOT / 60) * (demand.phi - 1) * demand.tIvt) / 1e6;
     const Tcar = R * 1000 * D * params.alpha;
     const congestion = (Tcar * CONST.TRIP_LENGTH_MI * CONST.CONGESTION_PER_MI) / 1e6;
     const accident   = (Tcar * CONST.TRIP_LENGTH_MI * CONST.ACCIDENT_PER_MI) / 1e6;
-    const emissions  = (Tcar * CONST.TRIP_LENGTH_MI * CONST.EMISSIONS_PER_MI) / 1e6;
-    const mohring = CS * CONST.MOHRING_FACTOR;
-    const labor   = CS * CONST.LABOR_FACTOR;
-    // Crowding enters twice by design (demand suppression via tGen in computeDemand, AND this
-    // disamenity term); not double-counted at the reference where GC==GC0 makes the CS term zero. See spec 3.3.
-    const crowdingDisamenity = -((params.VOT / 60) * (demand.phi - 1) * demand.tIvt * (R * 1000 * D)) / 1e6;
-    const direct = CS + congestion + mohring + accident + emissions + labor + crowdingDisamenity;
-    const agglomeration = direct * params.gamma;
-    const total = direct * (1 + params.gamma);
-    return { CS, congestion, mohring, accident, emissions, labor, crowdingDisamenity, direct, agglomeration, total };
+    const emissions  = (Tcar * CONST.TRIP_LENGTH_MI * CONST.EMISSIONS_PER_MI) / 1e6 * (params.carbonFactor ?? 1);
+    const mohring = CS * (params.mohring_coef ?? 0.18);
+    const labor   = CS * (params.labor_coef ?? 0.05);
+    const userBenefits = CS + mohring;                            // A2 base
+    const agglomeration = userBenefits * params.gamma;
+    const total = userBenefits * (1 + params.gamma) + congestion + accident + emissions + labor;
+    return { CS, crowdingInCS, congestion, mohring, accident, emissions, labor, userBenefits, agglomeration, total };
   }
   function calibrateRef(params, refSeed) {
     const d0 = computeDemand(params, { ...refSeed, tGen0: null });
@@ -396,15 +396,10 @@ window.TBCR_IO = (function () {
     const b = TBCR.computeBenefits(base, d, ref);
     // CS0 = 40k*300days*(12/60)h*$18 = $43.2M (matches original model)
     T.eq('CS baseline 43.2M', b.CS, 40*1000*300*(12/60)*18/1e6, 1e-6);
-    T.eq('no crowding disamenity at phi=1', b.crowdingDisamenity, 0, 1e-9);
-    T.ok('total > direct (agglomeration adds)', b.total > b.direct);
-    T.eq('total = direct*(1+gamma)', b.total, b.direct*1.25, 1e-9);
-    // crowding disamenity turns negative once load exceeds comfort
-    const crowded = { ...base, load_comfort:0.80 };
-    const refC = { ...refCal, tGen0: cal.tGen, GC0: cal.GC };
-    const dC = TBCR.computeDemand(crowded, refC);
-    const bC = TBCR.computeBenefits(crowded, dC, refC);
-    T.ok('crowding disamenity negative when phi>1', dC.phi > 1 && bC.crowdingDisamenity < 0);
+    // TODO(Task 6): re-anchor for v2 — removed: 'no crowding disamenity at phi=1' (b.crowdingDisamenity),
+    // 'total > direct (agglomeration adds)' (b.direct), 'total = direct*(1+gamma)' (b.direct),
+    // 'crowding disamenity negative when phi>1' (bC.crowdingDisamenity). A1 replaces the standalone
+    // crowdingDisamenity channel with the non-additive crowdingInCS diagnostic; see Task 1 test block.
   }
   // Task 6: welfare + anchor
   {
@@ -416,13 +411,16 @@ window.TBCR_IO = (function () {
     const w = TBCR.computeWelfare(anchorParams, ref);
     T.eq('anchor: R == R0', w.demand.R, 40, 1e-6);
     T.eq('anchor: phi == 1', w.demand.phi, 1, 1e-9);
-    T.eq('anchor: no crowding disamenity', w.benefits.crowdingDisamenity, 0, 1e-9);
+    // TODO(Task 6): re-anchor for v2 — removed 'anchor: no crowding disamenity' (w.benefits.crowdingDisamenity
+    // no longer exists under A1) and the v1-formula anchors below (agglomeration now re-based per A2:
+    // total = (CS+mohring)*(1+gamma) + congestion+accident+emissions+labor, so the old $75.24M/0.8356
+    // hand-worked values no longer hold). Re-created as v2 anchors once the lifecycle NPV/BCR lands.
     // Anchor reproduces the source model's FORMULAS (not its inconsistent prose headline
     // of $127M/1.2). Worked by hand at defaults: CS 43.2 + congestion 5.76 + Mohring 7.776
     // + accident 0.864 + emissions 0.432 + labor 2.16 = direct 60.192; ×1.25 = $75.24M.
     // net cost = annualized capital 86.745 + operating deficit 3.3 = 90.045; BCR = 0.8356.
-    T.eq('anchor: total benefits 75.24M', w.B, 75.24, 0.02);
-    T.eq('anchor: BCR 0.836', w.BCR, 0.8356, 0.005);
+    // T.eq('anchor: total benefits 75.24M', w.B, 75.24, 0.02);
+    // T.eq('anchor: BCR 0.836', w.BCR, 0.8356, 0.005);
     // MCPF monotonicity on the subsidized baseline
     const refN = TBCR.calibrateRef(P.params, P.ref);
     const wLo = TBCR.computeWelfare({ ...P.params, lambda:1.0 }, refN);
@@ -484,8 +482,10 @@ window.TBCR_IO = (function () {
     const anchorP={ ...PRESETS.us_lrt.params, lambda:1, load_comfort:10 };
     const ref=TBCR.calibrateRef(anchorP,PRESETS.us_lrt.ref);
     const w=TBCR.computeWelfare(anchorP,ref);
-    T.eq('baseline benefits 75.24M', w.B, 75.24, 0.02);
-    T.eq('baseline BCR 0.836', w.BCR, 0.8356, 0.005);
+    // TODO(Task 6): re-anchor for v2 — v1-formula totals no longer hold under A2's re-based
+    // agglomeration (see Task 6 anchor block above for the same retirement).
+    // T.eq('baseline benefits 75.24M', w.B, 75.24, 0.02);
+    // T.eq('baseline BCR 0.836', w.BCR, 0.8356, 0.005);
   }
   // VOT monotonicity (regression: rising value of time must RAISE benefits, not lower them —
   // guards the CS two-baseline formula against re-freezing GC0 at the calibration VOT)
@@ -497,6 +497,31 @@ window.TBCR_IO = (function () {
     T.ok('higher VOT raises total benefits', hi.B > lo.B);
     T.ok('higher VOT raises consumer surplus', hi.benefits.CS > lo.benefits.CS);
     T.ok('CS stays positive at high VOT', hi.benefits.CS > 0);
+  }
+  // Task 1: revised benefit kernel (A1 single-channel crowding, A2 re-based agglomeration, A3 coefs)
+  {
+    const base = { f:1.75, H_train:150, V:3, VOT:18, eps_f:-0.35, eps_t:-0.60, avg_speed:20,
+                   seats_per_vehicle:150, peak_hour_share:0.17, peak_direction_share:0.60,
+                   load_comfort:0.80, phi_crush:1.8, service_span_hrs:18,
+                   dt:12, alpha:0.30, gamma:0.25, mohring_coef:0.18, labor_coef:0.05 };
+    const refSeed = { R0:40, f0:1.75, H0:150, tWait0:5, tGen0:null };
+    const cal = TBCR.computeDemand(base, refSeed);
+    const ref = { ...refSeed, tGen0: cal.tGen, GC0: cal.GC };
+    const d = TBCR.computeDemand(base, ref);
+    const b = TBCR.computeBenefits(base, d, ref);
+    // A2: total = (CS+mohring)*(1+gamma) + congestion + accident + emissions + labor  (labour NOT uplifted)
+    const expected = (b.CS + b.mohring)*(1+base.gamma) + b.congestion + b.accident + b.emissions + b.labor;
+    T.eq('A2 total = userBenefits*(1+g)+externals+labor', b.total, expected, 1e-9);
+    T.ok('A2 agglomeration base is CS+mohring only', Math.abs(b.agglomeration - (b.CS+b.mohring)*base.gamma) < 1e-9);
+    T.ok('A1 no standalone crowdingDisamenity key', !('crowdingDisamenity' in b));
+    T.ok('A1 crowdingInCS >= 0', b.crowdingInCS >= -1e-9);
+    T.ok('A1 crowdingInCS > 0 when crowded', d.phi > 1 ? b.crowdingInCS > 0 : true);
+    // A3: labour scales with labor_coef
+    const b2 = TBCR.computeBenefits({ ...base, labor_coef:0.10 }, d, ref);
+    T.ok('A3 labour tracks labor_coef', Math.abs(b2.labor - 2*b.labor) < 1e-6);
+    // carbon factor scales emissions only
+    const b3 = TBCR.computeBenefits({ ...base, carbonFactor:2 }, d, ref);
+    T.ok('carbonFactor doubles emissions', Math.abs(b3.emissions - 2*b.emissions) < 1e-9);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
