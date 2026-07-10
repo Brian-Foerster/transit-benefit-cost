@@ -303,9 +303,11 @@ git commit -m "feat(v2): per-year annual kernel with ridership ramp and carbon e
 **Interfaces:**
 - Consumes: `annualKernel`, `capexSchedule`, `discountSeries`.
 - Produces:
-  - `TBCR.computeLifecycle(params, ref) → { npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, mcpfPV, pvCapex, residual, matureYear, byYear, rateSens }`. `matureYear` = `annualKernel` result at `t = min(ramp_years, horizon)` (fully mature). `byYear[t] = { t, benefits, opCost, fareRev, capex, disc }`. `rateSens = [{r,bcr}]` at r ∈ {0.02,0.03,0.04,0.06}.
-  - `bcrPV = pvBenefits / pvNetCost` (Infinity if denom 0). `subsidyPV = max(pvCapex − residual·disc[T] + pvOpDeficit − pvOpSurplus, 0)`; `pvNetCost = subsidyPV·λ`.
-  - Keep a thin `TBCR.computeWelfare(params, ref)` alias returning the mature-year annual object augmented with `{ B: matureYear.benefits.total, netCostWithMCPF: (annualized proxy) }`? NO — instead retire `computeWelfare`; update all callers to `computeLifecycle`. (The optimizer and charts in later tasks call `computeLifecycle`.)
+  - `TBCR.lifecycleCore(params, ref) → { npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, mcpfPV, pvCapex, pvOpNet, residual, matureYear, byYear }` — the rate-sensitivity-free core (used by the optimizer and chart sweeps — hot loops, called ~thousands of times, so it must NOT recompute rate sensitivity).
+  - `TBCR.computeLifecycle(params, ref)` = `lifecycleCore` plus `rateSens = [{r,bcr}]` at r ∈ {0.02,0.03,0.04,0.06} (used by `render()` for the headline strip). Both exported.
+  - `matureYear` = `annualKernel` result at `t = min(ramp_years, horizon)` (captured from the loop, not recomputed). `byYear[t] = { t, benefits, opCost, fareRev, capex, disc }`. `pvOpNet = pvOpDeficit − pvOpSurplus` (for the cost bar).
+  - `bcrPV = pvBenefits / pvNetCost` (Infinity if denom 0). `subsidyPV = max(pvCapex + pvOpDeficit − pvOpSurplus, 0)` where `pvCapex` is already net of `residual·disc[T]`; `pvNetCost = subsidyPV·λ`.
+  - Retire `computeWelfare`; update all callers to `computeLifecycle`/`lifecycleCore`.
 
 - [ ] **Step 1: Write the failing test:**
 
@@ -342,23 +344,25 @@ git commit -m "feat(v2): per-year annual kernel with ridership ramp and carbon e
     const T = params.horizon || 60;
     const disc = discountSeries(params);
     const { capex, residual } = capexSchedule(params);
-    let pvBenefits = 0, pvOpDeficit = 0, pvOpSurplus = 0, pvCapex = 0;
+    const matureT = Math.min(params.ramp_years ?? 5, T);
+    let pvBenefits = 0, pvOpDeficit = 0, pvOpSurplus = 0, pvCapex = 0, matureYear = null;
     const byYear = [];
     for (let t = 0; t <= T; t++) {
       const k = annualKernel(params, ref, t);
+      if (t === matureT) matureYear = k;                    // captured from the loop, not recomputed
       pvBenefits += k.benefits.total * disc[t];
       if (k.opNet < 0) pvOpDeficit += (-k.opNet) * disc[t]; else pvOpSurplus += k.opNet * disc[t];
       pvCapex += (capex[t] || 0) * disc[t];
       byYear.push({ t, benefits: k.benefits.total, opCost: k.opCost, fareRev: k.fareRev, capex: capex[t] || 0, disc: disc[t] });
     }
     pvCapex -= residual * disc[T];
-    const subsidyPV = Math.max(pvCapex + pvOpDeficit - pvOpSurplus, 0);
+    const pvOpNet = pvOpDeficit - pvOpSurplus;
+    const subsidyPV = Math.max(pvCapex + pvOpNet, 0);
     const mcpfPV = (params.lambda - 1) * subsidyPV;
     const pvNetCost = subsidyPV + mcpfPV;
     const npv = pvBenefits - pvNetCost;
     const bcrPV = pvNetCost !== 0 ? pvBenefits / pvNetCost : Infinity;
-    const matureYear = annualKernel(params, ref, Math.min(params.ramp_years ?? 5, T));
-    return { npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, mcpfPV, pvCapex, residual, matureYear, byYear };
+    return { npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, mcpfPV, pvCapex, pvOpNet, residual, matureYear, byYear };
   }
   function computeLifecycle(params, ref) {
     const base = lifecycleCore(params, ref);
@@ -367,7 +371,7 @@ git commit -m "feat(v2): per-year annual kernel with ridership ramp and carbon e
   }
 ```
 
-Update the `root.TBCR = { … }` export: remove `computeWelfare`, add `computeLifecycle`.
+Update the `root.TBCR = { … }` export: remove `computeWelfare`, add `lifecycleCore` and `computeLifecycle`.
 
 - [ ] **Step 4: Run to verify it passes** → Task 5 lines PASS. (Other suites still have the Task 6/12 blocks commented from Task 1.)
 
@@ -401,7 +405,7 @@ git commit -m "feat(v2): discounted lifecycle NPV/BCR engine replacing annual co
   function optimizeFare(params, ref, objective, opts) {
     const fMin = (opts && opts.fMin) ?? 0.5, fMax = (opts && opts.fMax) ?? 5.0;
     const target = (opts && opts.fareboxTarget) ?? 40;
-    const metric = (f) => { const w = computeLifecycle({ ...params, f }, ref); return { W: w.npv, rev: w.matureYear.fareRev, FRR: w.matureYear.FRR, R: w.matureYear.demand.R, BCR: w.bcrPV }; };
+    const metric = (f) => { const w = lifecycleCore({ ...params, f }, ref); return { W: w.npv, rev: w.matureYear.fareRev, FRR: w.matureYear.FRR, R: w.matureYear.demand.R, BCR: w.bcrPV }; };   // lifecycleCore (no rateSens) — hot loop
     if (objective === 'fareboxTarget') {
       const N = 200;
       for (let i = 0; i <= N; i++) {
@@ -569,7 +573,8 @@ git commit -m "feat(v2): JSON v2 schema with asset block and v1->v2 migration"
 
 ```html
   <h2>Time &amp; finance</h2><div class="sliders" id="grpTime"></div>
-  <h2>Asset lifecycle</h2><div class="sliders" id="grpAssets"></div>
+  <details><summary style="cursor:pointer;font-size:1.05rem;font-weight:600;margin:1.2rem 0 .4rem">Asset lifecycle (advanced)</summary>
+  <div class="sliders" id="grpAssets"></div></details>
 ```
 
 - [ ] **Step 3: Extend `SLIDERS`** with the new groups and add the coefficient sliders to `grpBehavior`:
@@ -658,7 +663,7 @@ git commit -m "feat(v2): NPV headline cards, time/finance + asset-lifecycle slid
 
 - [ ] **Step 1: Replace the canvases** to five charts (grid), ids `chBenefit chCost chCashflow chDemand chWelfare`.
 
-- [ ] **Step 2: Rewrite `init()` and `__updateCharts`** to build datasets once (animation:false) and mutate in place. Benefit bar uses `w.matureYear.benefits` (CS, congestion, mohring, accident, emissions, labor, agglomeration). Cost bar uses PV parts: `[Math.max(w.pvCapex,0), w.subsidyPV - Math.max(w.pvCapex,0) > 0 ? (w.subsidyPV-Math.max(w.pvCapex,0)) : 0, w.mcpfPV]` labelled Capital+renewals (PV, net residual) / Operating subsidy (PV) / MCPF (PV). Cash-flow chart: from `w.byYear`, plot `benefits`, `opCost`, `capex` per year and a cumulative NPV line `Σ (benefits-opCost-capex)·disc`. Demand/welfare sweep fare 0.5→5 step 0.25 (coarser to bound the 60-year cost) using `TBCR.computeLifecycle({...st.params,f}, st.ref)` → `.matureYear.demand.R` and `.npv`.
+- [ ] **Step 2: Rewrite `init()` and `__updateCharts`** to build datasets once (animation:false) and mutate in place. Benefit bar uses `w.matureYear.benefits` (CS, congestion, mohring, accident, emissions, labor, agglomeration — no crowding segment). Cost bar uses PV parts: `[w.pvCapex, Math.max(w.pvOpNet,0), w.mcpfPV]` labelled Capital+renewals (PV, net residual) / Operating subsidy (PV) / MCPF (PV); if `w.pvOpNet < 0` show it as a negative "operating surplus offset" segment. Cash-flow chart: from `w.byYear`, plot `benefits`, `opCost`, `capex` per year and a cumulative-NPV line `Σ (benefits-opCost-capex)·disc`. Demand/welfare sweep fare 0.5→5 step 0.25 (19 points, to bound the 60-year cost) using **`TBCR.lifecycleCore({...st.params,f}, st.ref)`** (NOT `computeLifecycle` — avoid recomputing rateSens 19×) → `.matureYear.demand.R` and `.npv`.
 
 Provide the full block modeled on the existing charts block (init once, `animation:false`, `update()` mutates `dataset.data`); include a `title` per chart. Reuse the guard `if (typeof document!=='undefined' && !/[?&]test=1/.test(location.search||'') && typeof Chart!=='undefined')`.
 
@@ -708,5 +713,7 @@ git commit -m "docs(v2): glossary, README lifecycle model + preset table, consol
 - **Anchor is data-derived:** the v2 anchor numbers are computed by the Task 6 one-off snippet and pasted as literals; do not invent them. Expect the mature-year benefit to shift from v1 because agglomeration is re-based (labour/externals no longer uplifted) — that is intended.
 - **Performance:** `computeLifecycle` runs `horizon+1` kernels; `optimizeFare` and the fare-sweep charts call it repeatedly. The demand fixed-point converges in a few iterations, so a 60-year lifecycle is a few thousand cheap ops — fine for on-input rendering. Keep the fare sweep at step 0.25 (19 points), not 0.1.
 - **DOM purity:** engine/presets/tests stay DOM-free; only `tbcr-ui`/`tbcr-charts` touch DOM/Chart, both guarded. The Node runner evals engine+presets+tests only.
-- **Type consistency:** `computeLifecycle` returns `{ npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, mcpfPV, pvCapex, residual, matureYear, byYear, rateSens }`. `matureYear` is an `annualKernel` result: `{ demand, benefits, opCost, fareRev, opNet, R0t, FRR }`. `benefits` has `{ CS, crowdingInCS, congestion, mohring, accident, emissions, labor, userBenefits, agglomeration, total }` (no `crowdingDisamenity`, no `direct`). UI and charts reference exactly these.
+- **Type consistency:** `lifecycleCore` returns `{ npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, mcpfPV, pvCapex, pvOpNet, residual, matureYear, byYear }`; `computeLifecycle` adds `rateSens`. `matureYear` is an `annualKernel` result: `{ demand, benefits, opCost, fareRev, opNet, R0t, FRR }`. `benefits` has `{ CS, crowdingInCS, congestion, mohring, accident, emissions, labor, userBenefits, agglomeration, total }` (no `crowdingDisamenity`, no `direct`). UI/charts/optimizer reference exactly these.
+- **Hot loops use `lifecycleCore` (no rateSens); `render()` uses `computeLifecycle` (needs rateSens for the strip).** Verified: `computeLifecycle` is 5× the work of `lifecycleCore`; using it in the optimizer would be 18k+ kernels/click vs 3.6k.
 - **`computeWelfare` is gone:** ensure no code (UI, charts, optimizer, tests) still calls it after Task 5/6.
+- **Horizon slider is mildly stepwise near renewal boundaries (<2% NPV jumps, dampened by residual) — expected, not a bug.**
