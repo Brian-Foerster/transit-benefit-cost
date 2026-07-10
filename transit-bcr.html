@@ -64,9 +64,9 @@
   <div class="optbar">
     <span class="optlabel">Optimize:</span>
     <div class="optbtns">
-      <button id="btnOptBCR">Maximize BCR (fare + service)</button>
+      <button id="btnOptBCR">Maximize NPV (fare + service)</button>
     </div>
-    <div class="opthint">Jointly picks the fare and daily train-hours that maximize the PV benefit-cost ratio, then moves both sliders. For realistic inelastic demand this tends to favour a low fare with frequent service — cheap, frequent transit is the most cost-effective per public dollar.</div>
+    <div class="opthint">Jointly picks the fare and daily train-hours that maximize net present value (total discounted benefits minus costs), then moves both sliders. NPV rewards total welfare, not bang-per-dollar, so it favours larger, well-used systems.</div>
   </div>
   <div id="warn"></div>
   <div class="cards">
@@ -316,12 +316,13 @@
     base.rateSens = [0.02, 0.03, 0.04, 0.06].map(r => ({ r, bcr: lifecycleCore({ ...params, discount_rate: r, declining_rate: false }, ref).bcrPV }));
     return base;
   }
-  // Jointly maximize PV-BCR over fare AND daily train-hours (service), via coordinate ascent
-  // with golden-section on each axis. Uses lifecycleCore (no rateSens) in the hot loop.
+  // Jointly maximize an objective ('npv' or 'bcr') over fare AND daily train-hours (service), via
+  // coordinate ascent with golden-section on each axis. Uses lifecycleCore (no rateSens) in the hot loop.
   function optimizeBCR(params, ref, opts) {
     opts = opts || {};
     const fMin = opts.fMin ?? 0.5, fMax = opts.fMax ?? 5.0, hMin = opts.hMin ?? 50, hMax = opts.hMax ?? 1200;
-    const bcrAt = (f, H) => lifecycleCore({ ...params, f, H_train: H }, ref).bcrPV;
+    const objective = opts.objective || 'bcr';
+    const scoreAt = (f, H) => { const w = lifecycleCore({ ...params, f, H_train: H }, ref); return objective === 'npv' ? w.npv : w.bcrPV; };
     const gr = (Math.sqrt(5) - 1) / 2;
     const golden = (lo, hi, score, tol) => {
       let a = lo, c = hi, x1 = c - gr * (c - a), x2 = a + gr * (c - a), f1 = score(x1), f2 = score(x2);
@@ -333,8 +334,8 @@
     };
     let f = params.f, H = params.H_train;
     for (let r = 0; r < 7; r++) {
-      f = golden(fMin, fMax, x => bcrAt(x, H), 1e-3);
-      H = golden(hMin, hMax, x => bcrAt(f, x), 0.5);
+      f = golden(fMin, fMax, x => scoreAt(x, H), 1e-3);
+      H = golden(hMin, hMax, x => scoreAt(f, x), 0.5);
     }
     const w = lifecycleCore({ ...params, f, H_train: H }, ref);
     return { fareStar: f, hStar: H, bcr: w.bcrPV, npv: w.npv, R: w.matureYear.demand.R };
@@ -803,6 +804,10 @@ window.TBCR_IO = (function () {
     let best = { f:0, bcr:-1 };
     for (let f=0.5; f<=5.0001; f+=0.1){ const bcr=TBCR.lifecycleCore({...P.params,f},ref).bcrPV; if(bcr>best.bcr) best={f,bcr}; }
     T.ok('fare-only BCR-max is interior (not at a bound)', best.f > 0.55 && best.f < 4.95);
+    // NPV objective (used by the widget button)
+    const oNpv = TBCR.optimizeBCR(P.params, ref, { objective:'npv' });
+    T.ok('NPV-opt fare in range', oNpv.fareStar >= 0.5 && oNpv.fareStar <= 5.0);
+    T.ok('NPV-opt >= base NPV', oNpv.npv >= TBCR.lifecycleCore(P.params, ref).npv - 1e-3);
   }
   // marginal cost per passenger (mc_pax): a real per-rider cost that brakes the fare floor
   {
@@ -981,12 +986,12 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     syncInputsFromParams(); render();
   }
   function runOptimizeBCR(){
-    const o = TBCR.optimizeBCR(state.params, state.ref, { fMin:0.5, fMax:5.0, hMin:50, hMax:1200 });
+    const o = TBCR.optimizeBCR(state.params, state.ref, { objective:'npv', fMin:0.5, fMax:5.0, hMin:50, hMax:1200 });
     state.lastOpt = o;
     state.params.f = Math.round(o.fareStar / 0.05) * 0.05;      // snap fare slider
     state.params.H_train = Math.round(o.hStar / 10) * 10;        // snap train-hours slider
     syncInputsFromParams(); render();
-    $('optout').textContent = `Max PV-BCR → fare $${state.params.f.toFixed(2)}, service ${state.params.H_train} train-hrs  →  BCR ${o.bcr.toFixed(2)}, NPV ${fmtM(o.npv)} (mature ridership ${o.R.toFixed(0)}k)`;
+    $('optout').textContent = `Max NPV → fare $${state.params.f.toFixed(2)}, service ${state.params.H_train} train-hrs  →  NPV ${fmtM(o.npv)}, BCR ${o.bcr.toFixed(2)} (mature ridership ${o.R.toFixed(0)}k)`;
   }
   $('btnExport').addEventListener('click', doExport);
   $('btnImport').addEventListener('click', doImport);
