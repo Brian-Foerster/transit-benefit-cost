@@ -29,8 +29,15 @@ Open `transit-bcr.html` in any modern browser (double-click). No build step. Cha
   excludes in-vehicle crowding, which is already counted as a rider disamenity in consumer surplus.
   Without it the marginal passenger costs nothing, so a BCR/NPV optimizer drives fares to the floor;
   with it, the optimal fare is interior.
-- **Fare + service optimization:** one "Maximize BCR" control jointly picks the fare and daily
-  train-hours that maximize the PV benefit-cost ratio, then snaps both sliders.
+- **Income-derived value of time:** VOT is computed as `vot_fraction × rider_income / 2080` (Cal-B/C /
+  US DOT method: ~50% of the hourly wage for the commute). This is the equity lever — transit riders
+  often earn well below the area median, which lowers VOT and the measured benefits.
+- **Line length → first-principles service:** peak frequency is derived from the route length
+  (`train-hours / (round-trip cycle × span)`), so a longer line buys lower frequency, longer waits, and
+  less capacity per daily train-hour. Average *trip* length (8 mi, for in-vehicle time) is a separate,
+  shorter quantity.
+- **Fare + service optimization:** one "Maximize NPV" control jointly picks the fare and daily
+  train-hours that maximize net present value, then snaps both sliders.
 - **Discounted lifecycle:** every benefit and cost stream is computed year-by-year over a multi-decade
   horizon, with ridership ramping in from opening and capital assets renewed and residualized on their
   own schedules, then discounted to present value (see below).
@@ -90,8 +97,8 @@ the built engine (see the "anchor" tests in `tbcr-tests`), not carried forward f
 **As shipped (what the cards actually show):** the presets ship with the corrections **on** (`λ=1.30`
 MCPF, `load_comfort=0.80` crowding, full 60-year discounted lifecycle), so the numbers on screen
 reflect both the second-best corrections and the time value of money — this is the point of the
-model, not a discrepancy. For the US-LRT preset at its defaults the widget shows **NPV ≈ −$1.01B,
-PV-BCR ≈ 0.62** (including a $0.75/trip marginal cost per passenger — see below).
+model, not a discrepancy. For the US-LRT preset at its defaults the widget shows **NPV ≈ −$1.00B,
+PV-BCR ≈ 0.63** (including a $0.75/trip marginal cost per passenger — see below).
 
 ## Presets
 
@@ -102,11 +109,11 @@ on-screen info box explains what makes each one distinct. As-shipped lifecycle r
 
 | Preset | Riders/day | Capital | $ / daily rider | NPV | PV-BCR | Character |
 |---|---|---|---|---|---|---|
-| US LRT baseline | 40k | $1.5B | $38k | −$1.01B | 0.62 | marginal, subsidy-heavy (the anchor preset) |
-| Elizabeth Line | 600k | $24B | $40k | +$25.1B | 1.64 | costly but justified by scale + agglomeration |
-| Stockholm T-bana | 130k | $3B | $23k | +$4.9B | 2.10 | efficient flagship winner |
-| High-cost US | 75k | $6B | $80k | −$7.4B | 0.29 | cost-disease cautionary tale |
-| Low-cost intl | 70k | $1.2B | $17k | +$0.24B | 1.10 | cheap and efficient |
+| US LRT baseline | 40k | $1.5B | $38k | −$1.00B | 0.63 | marginal, subsidy-heavy (the anchor preset) |
+| Elizabeth Line | 600k | $24B | $40k | +$25.2B | 1.65 | costly but justified by scale + agglomeration |
+| Stockholm T-bana | 130k | $3B | $23k | +$5.2B | 2.17 | efficient flagship winner |
+| High-cost US | 75k | $6B | $80k | −$7.4B | 0.30 | cost-disease cautionary tale |
+| Low-cost intl | 70k | $1.2B | $17k | +$0.28B | 1.12 | cheap and efficient |
 
 `us_lrt` is held fixed as the regression anchor; the other four were recalibrated to realistic,
 internally-consistent scales.
