@@ -387,11 +387,25 @@ window.TBCR_IO = (function () {
     eps_f:[-1.50,-0.10], eps_t:[-1.5,-0.20], avg_speed:[8,45], seats_per_vehicle:[80,300],
     peak_hour_share:[0.08,0.30], peak_direction_share:[0.50,0.75], load_comfort:[0.5,1.0],
     phi_crush:[1.2,2.5], service_span_hrs:[10,24],
+    horizon:[20,100], discount_rate:[0.01,0.08], ramp_start:[0.2,1.0], ramp_years:[1,20],
+    growth:[0,0.02], carbon_growth:[0,0.07], mohring_coef:[0.05,0.30], labor_coef:[0,0.15],
   };
-  function serializeState(params, ref) { return { version:1, params:{ ...params }, referencePoint:{ ...ref } }; }
+  const V2_DEFAULTS = { horizon:60, discount_rate:0.04, declining_rate:false, ramp_start:0.60,
+    ramp_years:5, growth:0, carbon_growth:0, mohring_coef:0.18, labor_coef:0.05 };
+  function serializeState(params, ref) { return { version:2, params:{ ...params }, referencePoint:{ ...ref } }; }
   function parseState(obj) {
     const warnings = [], src = (obj && obj.params) || {}, params = {};
+    const isV1 = !obj || obj.version == null || obj.version < 2;
     Object.keys(src).forEach(k => {
+      // assets/declining_rate are validated in place (not deferred) so the output key order
+      // mirrors the source object — required for JSON.stringify round-trip idempotency.
+      if (k === 'assets') {
+        if (Array.isArray(src.assets) && src.assets.every(a => a && isFinite(a.share) && isFinite(a.life))) {
+          params.assets = src.assets.map(a => ({ share: a.share, life: a.life }));
+        } else { params.assets = window.TBCR.DEFAULT_ASSETS.map(a => ({ ...a })); warnings.push('invalid assets replaced with default'); }
+        return;
+      }
+      if (k === 'declining_rate') { params.declining_rate = !!src.declining_rate; return; }
       if (!(k in RANGES)) { warnings.push(`unknown key ignored: ${k}`); return; }
       let v = src[k]; const [lo, hi] = RANGES[k];
       if (typeof v !== 'number' || !isFinite(v)) { warnings.push(`non-numeric ${k} ignored`); return; }
@@ -399,6 +413,12 @@ window.TBCR_IO = (function () {
       if (v > hi) { warnings.push(`${k} ${v} clamped to ${hi}`); v = hi; }
       params[k] = v;
     });
+    // fill in assets/declining_rate if absent from src entirely (e.g. v1 payloads)
+    if (!('assets' in params)) params.assets = window.TBCR.DEFAULT_ASSETS.map(a => ({ ...a }));
+    if (!('declining_rate' in params)) params.declining_rate = false;
+    // migrate v1: fill any missing v2 scalar with its default
+    Object.keys(V2_DEFAULTS).forEach(k => { if (!(k in params)) params[k] = V2_DEFAULTS[k]; });
+    if (isV1) warnings.push('migrated v1 scenario to v2 defaults (horizon/discount/ramp/assets)');
     const ref = (obj && obj.referencePoint) ? { ...obj.referencePoint } : null;
     return { params, ref, warnings };
   }
@@ -540,15 +560,10 @@ window.TBCR_IO = (function () {
   {
     const P = PRESETS.us_lrt;
     const s = TBCR_IO.serializeState(P.params, P.ref);
-    T.eq('serialize version', s.version, 1);
+    T.eq('serialize version', s.version, 2);
     const round = TBCR_IO.parseState(JSON.parse(JSON.stringify(s)));
     T.eq('round-trip fare preserved', round.params.f, P.params.f, 1e-9);
-    // TODO(Task 7): re-anchor for v2 JSON schema — removed 'no warnings on clean input'.
-    // v1 RANGES doesn't yet know the v2 lifecycle fields (horizon, discount_rate, assets, ...)
-    // added to every preset in Task 6, so parseState currently warns 'unknown key ignored' for
-    // each. Task 7 (JSON v2 + v1 migration, per docs/specs/2026-07-09-v2-discounted-lifecycle-
-    // engine.md §9) bumps version to 2 and extends RANGES/parseState for the new fields.
-    // T.ok('no warnings on clean input', round.warnings.length === 0);
+    T.ok('no warnings on clean input', round.warnings.length === 0);
     const bad = TBCR_IO.parseState({ version:1, params:{ ...P.params, f:99, bogus:5 }, referencePoint:P.ref });
     T.ok('out-of-range fare clamped', bad.params.f <= 5.0);
     T.ok('warns on clamp', bad.warnings.some(w => w.includes('f ')));
@@ -560,9 +575,26 @@ window.TBCR_IO = (function () {
     const s1 = TBCR_IO.serializeState(P.params, P.ref);
     const p1 = TBCR_IO.parseState(s1);
     const s2 = TBCR_IO.serializeState(p1.params, p1.ref || P.ref);
-    // TODO(Task 7): re-anchor for v2 JSON schema — parseState currently drops the v2 lifecycle
-    // fields as unknown keys (see Task 8 TODO above), so the round trip isn't yet idempotent.
-    // T.ok('round-trip idempotent', JSON.stringify(s1.params) === JSON.stringify(s2.params));
+    T.ok('round-trip idempotent', JSON.stringify(s1.params) === JSON.stringify(s2.params));
+  }
+  // Task 7: JSON v2 + migration
+  {
+    const P = PRESETS.us_lrt;
+    const s = TBCR_IO.serializeState(P.params, P.ref);
+    T.eq('serialize version 2', s.version, 2);
+    T.ok('serialize includes assets', Array.isArray(s.params.assets));
+    const round = TBCR_IO.parseState(JSON.parse(JSON.stringify(s)));
+    T.eq('round-trip horizon', round.params.horizon, 60, 1e-9);
+    T.ok('round-trip assets preserved', round.params.assets.length === 4);
+    // v1 migration: no version, no v2 fields
+    const v1 = { params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.25, K:1.5, H_train:150, V:3, c_op:180, f:1.75, lambda:1.30, eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150, peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80, phi_crush:1.8, service_span_hrs:18 }, referencePoint:{ R0:40, f0:1.75, H0:150, tWait0:5 } };
+    const mig = TBCR_IO.parseState(v1);
+    T.eq('v1 migrates horizon default', mig.params.horizon, 60, 1e-9);
+    T.ok('v1 migrates assets default', Array.isArray(mig.params.assets) && mig.params.assets.length === 4);
+    T.ok('v1 migration warns', mig.warnings.some(w => /migrat/i.test(w)));
+    // clamp new scalar
+    const bad = TBCR_IO.parseState({ version:2, params:{ ...P.params, horizon:500 }, referencePoint:P.ref });
+    T.ok('horizon clamped', bad.params.horizon <= 100);
   }
   // VOT monotonicity (regression: rising value of time must RAISE benefits, not lower them —
   // guards the CS two-baseline formula against re-freezing GC0 at the calibration VOT)
