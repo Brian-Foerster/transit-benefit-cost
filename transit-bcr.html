@@ -62,13 +62,11 @@
   </div>
   <div id="presetinfo"></div>
   <div class="optbar">
-    <span class="optlabel">Optimize fare (moves the fare slider automatically):</span>
+    <span class="optlabel">Optimize:</span>
     <div class="optbtns">
-      <button data-opt="welfare">Max welfare</button>
-      <button data-opt="revenue">Max revenue</button>
-      <button data-opt="fareboxTarget">Farebox&nbsp;40%</button>
+      <button id="btnOptBCR">Maximize BCR (fare + service)</button>
     </div>
-    <div class="opthint">With inelastic demand (fare elasticity above −1, the realistic transit range) revenue rises with fare, so “max revenue” pins to the highest fare; “max welfare” can coincide with it when cutting the subsidy outweighs the surplus lost. Make demand elastic (fare elasticity below −1) to see an interior revenue peak and the two optima separate.</div>
+    <div class="opthint">Jointly picks the fare and daily train-hours that maximize the PV benefit-cost ratio, then moves both sliders. For realistic inelastic demand this tends to favour a low fare with frequent service — cheap, frequent transit is the most cost-effective per public dollar.</div>
   </div>
   <div id="warn"></div>
   <div class="cards">
@@ -314,7 +312,30 @@
     base.rateSens = [0.02, 0.03, 0.04, 0.06].map(r => ({ r, bcr: lifecycleCore({ ...params, discount_rate: r, declining_rate: false }, ref).bcrPV }));
     return base;
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, optimizeFare, DEFAULT_ASSETS, capexSchedule, rampFactor, carbonFactor, discountSeries, annualKernel, lifecycleCore, computeLifecycle };
+  // Jointly maximize PV-BCR over fare AND daily train-hours (service), via coordinate ascent
+  // with golden-section on each axis. Uses lifecycleCore (no rateSens) in the hot loop.
+  function optimizeBCR(params, ref, opts) {
+    opts = opts || {};
+    const fMin = opts.fMin ?? 0.5, fMax = opts.fMax ?? 5.0, hMin = opts.hMin ?? 50, hMax = opts.hMax ?? 1200;
+    const bcrAt = (f, H) => lifecycleCore({ ...params, f, H_train: H }, ref).bcrPV;
+    const gr = (Math.sqrt(5) - 1) / 2;
+    const golden = (lo, hi, score, tol) => {
+      let a = lo, c = hi, x1 = c - gr * (c - a), x2 = a + gr * (c - a), f1 = score(x1), f2 = score(x2);
+      for (let i = 0; i < 50 && (c - a) > tol; i++) {
+        if (f1 < f2) { a = x1; x1 = x2; f1 = f2; x2 = a + gr * (c - a); f2 = score(x2); }
+        else { c = x2; x2 = x1; f2 = f1; x1 = c - gr * (c - a); f1 = score(x1); }
+      }
+      return (a + c) / 2;
+    };
+    let f = params.f, H = params.H_train;
+    for (let r = 0; r < 7; r++) {
+      f = golden(fMin, fMax, x => bcrAt(x, H), 1e-3);
+      H = golden(hMin, hMax, x => bcrAt(f, x), 0.5);
+    }
+    const w = lifecycleCore({ ...params, f, H_train: H }, ref);
+    return { fareStar: f, hStar: H, bcr: w.bcrPV, npv: w.npv, R: w.matureYear.demand.R };
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, optimizeFare, optimizeBCR, DEFAULT_ASSETS, capexSchedule, rampFactor, carbonFactor, discountSeries, annualKernel, lifecycleCore, computeLifecycle };
 })(window);
 </script>
 
@@ -326,11 +347,11 @@
 window.PRESETS = {
   us_lrt: {
     label: 'US LRT baseline',
-    citation: 'Source-doc defaults; US NTD medians. Anchor (lambda=1, phi=1): $75.2M / BCR 0.84. As shipped (lambda=1.30, crowded): BCR ~0.52.',
-    about: 'The reference case — a ~10 km light-rail line in a ~1M metro, moderate on every dimension (40k riders, $1.5B, $38k per daily rider). Ships with MCPF (1.30) and mild crowding on, so it reads a marginal BCR ~0.52. Set MCPF to 1.0 and lift the crowding threshold to recover the source model’s BCR 0.84 anchor. This is the preset the whole model is calibrated against.',
+    citation: 'Source-doc defaults; US NTD medians. Mature-year benefits (lambda=1, phi=1) ~$72.9M. As shipped (60-yr lifecycle, 4% discount, MCPF+crowding on): NPV ~-$0.75B, PV-BCR ~0.69.',
+    about: 'The reference case — a ~10 km light-rail line in a ~1M metro, moderate on every dimension (40k riders, $1.5B, $38k per daily rider). Over a 60-year discounted lifecycle it shows NPV ≈ −$0.75B and PV-BCR ≈ 0.69, with MCPF (1.30) and crowding on — a marginal, subsidy-heavy project. It is the fixed regression anchor the whole model is calibrated against; long-run fare elasticity −0.6.',
     params: { R:40, dt:12, VOT:18, alpha:0.30, gamma:0.25, K:1.5,
       H_train:150, V:3, c_op:180, f:1.75, lambda:1.30,
-      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
+      eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
       horizon:60, discount_rate:0.04, declining_rate:false, ramp_start:0.60, ramp_years:5,
@@ -341,10 +362,10 @@ window.PRESETS = {
   elizabeth_line: {
     label: 'Elizabeth Line (London)',
     citation: 'Crossrail ~£19B; ~600k trips/day design capacity; Centre for Cities high agglomeration; congestion-priced city.',
-    about: 'The megaproject that scale justifies — enormous capital ($24B) but enormous ridership (~600k/day), big door-to-door time savings, and strong agglomeration (35%) in a congestion-priced city. High-frequency 9-car trains keep loads near capacity, and fares roughly cover operating cost, so capital dominates the ledger. BCR ~1.6: costly, but the ridership and productivity gains carry it.',
+    about: 'The megaproject that scale justifies — enormous capital ($24B) but enormous ridership (~600k/day), big time savings, and strong agglomeration (35%) in a congestion-priced city. Over the 60-year discounted lifecycle: NPV ≈ +$29B, PV-BCR ≈ 1.83 — the long-life civil assets (residual value) and productivity gains carry the huge capital. Costly, but it pays.',
     params: { R:600, dt:20, VOT:28, alpha:0.20, gamma:0.35, K:24,
       H_train:530, V:9, c_op:320, f:3.00, lambda:1.30,
-      eps_f:-0.30, eps_t:-0.55, avg_speed:33, seats_per_vehicle:250,
+      eps_f:-0.60, eps_t:-0.55, avg_speed:33, seats_per_vehicle:250,
       peak_hour_share:0.17, peak_direction_share:0.62, load_comfort:0.85,
       phi_crush:1.8, service_span_hrs:19,
       horizon:60, discount_rate:0.04, declining_rate:false, ramp_start:0.60, ramp_years:5,
@@ -355,10 +376,10 @@ window.PRESETS = {
   stockholm_tbana: {
     label: 'Stockholm T-bana',
     citation: 'Borjesson et al. 2020: wider economic impacts ~48% of user benefits; high farebox recovery.',
-    about: 'The flagship winner — efficient capital (~$23k per daily rider), high farebox recovery, comfortable loads (no crush), and the highest agglomeration uplift here (48%, per Borjesson et al.). An operating surplus offsets part of the capital. BCR ~2.5: the case where urban rail clearly pays for itself.',
+    about: 'The flagship winner — efficient capital (~$23k per daily rider), high farebox recovery, comfortable loads (no crush), and the highest agglomeration uplift here (48%, per Borjesson et al.). An operating surplus offsets part of the capital. Over the 60-year lifecycle: NPV ≈ +$5.8B, PV-BCR ≈ 2.60 — the case where urban rail clearly pays for itself.',
     params: { R:130, dt:14, VOT:24, alpha:0.35, gamma:0.48, K:3.0,
       H_train:340, V:6, c_op:160, f:3.50, lambda:1.30,
-      eps_f:-0.30, eps_t:-0.60, avg_speed:22, seats_per_vehicle:160,
+      eps_f:-0.60, eps_t:-0.60, avg_speed:22, seats_per_vehicle:160,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:19,
       horizon:60, discount_rate:0.04, declining_rate:false, ramp_start:0.60, ramp_years:5,
@@ -369,10 +390,10 @@ window.PRESETS = {
   high_cost_us: {
     label: 'High-cost US project',
     citation: 'US megaproject cost profile (~$80k per daily rider); agglomeration excluded per FTA practice.',
-    about: 'The cost-disease cautionary tale — megaproject capital ($6B, ~$80k per daily rider) on a corridor whose ridership (75k) and benefits are ordinary, with agglomeration ignored (10%, standard US appraisal). BCR ~0.25: the money went into construction, not outcomes. Levy’s central point in one preset — cost control matters far more than the funding mechanism.',
+    about: 'The cost-disease cautionary tale — megaproject capital ($6B, ~$80k per daily rider) on a corridor whose ridership (75k) and benefits are ordinary, with agglomeration ignored (10%, standard US appraisal). Over the 60-year lifecycle: NPV ≈ −$6.9B, PV-BCR ≈ 0.31 — the money went into construction, not outcomes. Levy’s point in one preset: cost control matters far more than the funding mechanism.',
     params: { R:75, dt:12, VOT:20, alpha:0.30, gamma:0.10, K:6.0,
       H_train:220, V:4, c_op:260, f:2.00, lambda:1.30,
-      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:170,
+      eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:170,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
       horizon:60, discount_rate:0.04, declining_rate:false, ramp_start:0.60, ramp_years:5,
@@ -383,10 +404,10 @@ window.PRESETS = {
   low_cost_intl: {
     label: 'Low-cost international',
     citation: 'International best-practice LRT (~$1.2B/10km, ~$17k per daily rider); lean operations.',
-    about: 'International best practice — cheap capital (~$1.2B, ~$17k per daily rider), lean operations near break-even, modest fares. Nothing spectacular on any single axis, but the efficiency clears BCR > 1 (~1.28). The quiet success: get costs right and a plain project still passes.',
+    about: 'International best practice — cheap capital (~$1.2B, ~$17k per daily rider), lean operations near break-even, modest fares. Nothing spectacular on any single axis, but the efficiency clears the bar over the 60-year lifecycle: NPV ≈ +$0.70B, PV-BCR ≈ 1.37. The quiet success: get costs right and a plain project still passes.',
     params: { R:70, dt:12, VOT:16, alpha:0.30, gamma:0.25, K:1.2,
       H_train:240, V:4, c_op:110, f:1.50, lambda:1.30,
-      eps_f:-0.35, eps_t:-0.60, avg_speed:20, seats_per_vehicle:160,
+      eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:160,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
       horizon:60, discount_rate:0.04, declining_rate:false, ramp_start:0.60, ramp_years:5,
@@ -762,6 +783,19 @@ window.TBCR_IO = (function () {
     T.ok('import clamps share to [0,1]', neg.params.assets.every(a => a.share>=0 && a.share<=1));
     T.ok('import clamps life to [5,120]', neg.params.assets.every(a => a.life>=5 && a.life<=120));
   }
+  // optimizeBCR: joint fare+service maximizer + point 5 (fare-only BCR-max is interior)
+  {
+    const P = PRESETS.us_lrt; const ref = TBCR.calibrateRef(P.params, P.ref);
+    const o = TBCR.optimizeBCR(P.params, ref, {});
+    T.ok('BCR-opt fare in range', o.fareStar >= 0.5 && o.fareStar <= 5.0);
+    T.ok('BCR-opt service in range', o.hStar >= 50 && o.hStar <= 1200);
+    const baseBCR = TBCR.lifecycleCore(P.params, ref).bcrPV;
+    T.ok('optimized BCR >= base BCR', o.bcr >= baseBCR - 1e-6);
+    T.ok('BCR-opt returns finite npv and positive ridership', isFinite(o.npv) && o.R > 0);
+    let best = { f:0, bcr:-1 };
+    for (let f=0.5; f<=5.0001; f+=0.1){ const bcr=TBCR.lifecycleCore({...P.params,f},ref).bcrPV; if(bcr>best.bcr) best={f,bcr}; }
+    T.ok('fare-only BCR-max is interior (not at a bound)', best.f > 0.55 && best.f < 4.95);
+  }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
@@ -815,7 +849,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     c_op:'Operating cost per vehicle-hour — crews, energy, maintenance. Typical: US LRT median ~$150–200; some systems >$250.',
     avg_speed:'Average end-to-end speed including stops. Sets in-vehicle time for the 8-mile trip; faster service lowers generalized cost and lifts demand. Typical: 15–25 mph for LRT, 30–35 for express/regional metro.',
     service_span_hrs:'Hours per day the line runs. With train-hours it sets peak frequency, and therefore capacity and crowding. Typical: 18–20 hours.',
-    eps_f:'% change in ridership per 1% change in fare. Typical transit is inelastic: −0.2 to −0.5 short-run (−0.35 default). Below −1 (elastic) is unusual for transit but lets you explore an interior revenue-maximizing fare.',
+    eps_f:'% change in ridership per 1% change in fare. Default −0.6 (a sensible long-run value; short-run is ~−0.3, long-run roughly doubles it). Transit is inelastic (above −1), so revenue keeps rising with fare — but the BCR-maximizing fare is still interior. Below −1 (elastic) is unusual for transit.',
     eps_t:'% change in ridership per 1% change in generalized travel time (in-vehicle + wait, crowding-weighted). Typical: −0.4 to −0.9. More negative = riders more sensitive to service quality.',
     lambda:'Marginal cost of public funds: the deadweight loss per dollar of subsidy raised through distortionary taxes. Typical: 1.1–1.5 (1.3 default). 1.0 = costless public money; 1.3 = each subsidy dollar costs society $1.30.',
     seats_per_vehicle:'Comfortable (seated) capacity per car. With frequency and cars/train it sets total capacity; loads above it start the crowding penalty. Typical: LRT ~150, metro/regional ~200–250.',
@@ -847,10 +881,10 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
           `<output id="o_${key}"></output>`;
         const tip=document.createElement('div'); tip.className='helptext'; tip.hidden=true; tip.textContent=help;
         wrap.appendChild(row); wrap.appendChild(tip); host.appendChild(wrap);
-        // asset_*_life sliders are handled by the ASSET_IDX proxy listener (they write
-        // state.params.assets[i].life, not a flat param); skip the generic listener so no
-        // bogus scalar key leaks into state/JSON export.
-        if (!(key in ASSET_IDX)) {
+        // asset_*_life sliders use the ASSET_IDX proxy listener; 'R' (ridership) uses a
+        // dedicated re-anchor handler (it must move the reference level ref.R0, not the
+        // inert params.R). Skip the generic listener for both.
+        if (!(key in ASSET_IDX) && key !== 'R') {
           row.querySelector('input').addEventListener('input', e=>{
             state.params[key] = parseFloat(e.target.value);
             $('o_'+key).textContent = e.target.value; render();
@@ -923,29 +957,30 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     $('warn').textContent = warnings.join('\n');
     syncInputsFromParams(); render();
   }
-  const OPT_LABEL = { welfare:'max-welfare', revenue:'max-revenue', fareboxTarget:'farebox-40%' };
-  function runOptimize(objective){
-    state.selectedOpt = objective;
-    const all = {};
-    ['welfare','revenue','fareboxTarget'].forEach(o=>{ all[o] = TBCR.optimizeFare(state.params, state.ref, o, {fareboxTarget:40}); });
-    const parts = ['welfare','revenue','fareboxTarget'].map(o=> `${OPT_LABEL[o]}: ${all[o].fareStar==null?'n/a':'$'+all[o].fareStar.toFixed(2)}`);
-    const sel = all[objective];
-    state.lastOpt = sel;
-    if (sel && sel.fareStar != null){
-      state.params.f = Math.round(sel.fareStar/0.05)*0.05;   // auto-shift the fare slider to the chosen optimum
-      syncInputsFromParams(); render();                       // render() also refreshes the charts
-      $('optout').textContent = `Optimal fares → ${parts.join('  ·  ')}  —  applied ${OPT_LABEL[objective]}: fare set to $${state.params.f.toFixed(2)}`;
-    } else {
-      $('optout').textContent = `Optimal fares → ${parts.join('  ·  ')}  —  ${OPT_LABEL[objective]} has no feasible fare in range; slider unchanged`;
-    }
+  function runOptimizeBCR(){
+    const o = TBCR.optimizeBCR(state.params, state.ref, { fMin:0.5, fMax:5.0, hMin:50, hMax:1200 });
+    state.lastOpt = o;
+    state.params.f = Math.round(o.fareStar / 0.05) * 0.05;      // snap fare slider
+    state.params.H_train = Math.round(o.hStar / 10) * 10;        // snap train-hours slider
+    syncInputsFromParams(); render();
+    $('optout').textContent = `Max PV-BCR → fare $${state.params.f.toFixed(2)}, service ${state.params.H_train} train-hrs  →  BCR ${o.bcr.toFixed(2)}, NPV ${fmtM(o.npv)} (mature ridership ${o.R.toFixed(0)}k)`;
   }
   $('btnExport').addEventListener('click', doExport);
   $('btnImport').addEventListener('click', doImport);
-  document.querySelectorAll('[data-opt]').forEach(b=> b.addEventListener('click', ()=>runOptimize(b.dataset.opt)));
+  $('btnOptBCR').addEventListener('click', runOptimizeBCR);
   buildSliders(); initPresets(); loadPreset('us_lrt');
   Object.keys(ASSET_IDX).forEach(id=>{ const el=$('s_'+id); if(el){ el.value = state.params.assets[ASSET_IDX[id]].life; $('o_'+id).textContent=el.value;
     el.addEventListener('input', e=>{ state.params.assets[ASSET_IDX[id]].life = parseFloat(e.target.value); $('o_'+id).textContent=e.target.value; render(); }); } });
   $('chkDeclining').addEventListener('change', e=>{ state.params.declining_rate = e.target.checked; render(); });
+  // Ridership slider re-anchors the reference level: it sets ref.R0 (the observed base ridership
+  // at the reference fare/service) and recomputes the reference generalized cost, so dragging it
+  // actually moves ridership. Fare/service still pivot around this anchor.
+  { const el=$('s_R'); if(el){ el.addEventListener('input', e=>{
+      const v = parseFloat(e.target.value); state.params.R = v; $('o_R').textContent = e.target.value;
+      state.ref = TBCR.calibrateRef({ ...state.params, f: state.ref.f0, H_train: state.ref.H0 },
+        { R0: v, f0: state.ref.f0, H0: state.ref.H0, tWait0: state.ref.tWait0 });
+      render();
+  }); } }
 }
 </script>
 
