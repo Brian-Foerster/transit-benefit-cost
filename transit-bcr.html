@@ -97,24 +97,34 @@
   <h2>Breakdown</h2><div id="breakdown"></div>
   <details id="glossary">
     <summary>What each benefit and cost line means</summary>
-    <p><strong>Benefits</strong> (annual social value created):</p>
+    <p><strong>Model shape:</strong> every quantity below is computed per year over the project horizon and then
+    discounted to a single present value (PV). The benefit–cost ratio is <strong>PV benefits ÷ PV net cost</strong>
+    (net cost includes the MCPF surcharge); NPV is PV benefits − PV net cost.</p>
+    <p><strong>Benefits</strong> (annual social value created, then summed as a PV):</p>
     <ul>
-      <li><strong>CS — consumer surplus:</strong> the value of time saved by riders versus their next-best option (ridership × minutes saved × value of time). Usually the largest benefit. Falls if fares or crowding rise.</li>
-      <li><strong>Congestion:</strong> road congestion avoided by the trips that would otherwise have been driven (diverted trips × trip miles × a per-mile congestion cost). Only diverted-car trips count.</li>
-      <li><strong>Mohring:</strong> the “more riders → more service → shorter waits for everyone” effect. Valued here as a fixed share (18%) of consumer surplus.</li>
-      <li><strong>Accident:</strong> crashes avoided by removing car trips from the road (diverted trips × miles × a per-mile external accident cost).</li>
-      <li><strong>Emissions:</strong> CO₂ and local air pollution avoided by those same diverted car trips.</li>
-      <li><strong>Labor:</strong> a small labor-market gain — cheaper commuting slightly offsets the income-tax drag on working. Valued at 5% of consumer surplus.</li>
-      <li><strong>Crowding (negative):</strong> the discomfort cost when trains run above comfortable capacity — in-vehicle time “feels” longer. Shown as a deduction from benefits.</li>
-      <li><strong>Agglomeration:</strong> wider productivity gains from better labor-market access, applied as a % uplift on all the direct benefits above.</li>
+      <li><strong>CS — consumer surplus:</strong> the value of time saved by riders versus their next-best option (ridership × minutes saved × value of time). Usually the largest benefit. Falls if fares rise; also falls as trains get more crowded, because crowding lengthens the generalized (perceived) travel time that CS is built from.</li>
+      <li><strong>Crowding — embedded in CS, not a separate line:</strong> there is no standalone crowding deduction. The crowding penalty is already baked into CS through the generalized-time multiplier φ. The <em>"crowding embedded in CS"</em> figure shown in the breakdown is a diagnostic only — it reports how much of CS is being eaten by crowding discomfort (riders' surplus versus an uncrowded trip); it is not added or subtracted again.</li>
+      <li><strong>Congestion:</strong> road congestion avoided by the trips that would otherwise have been driven (diverted trips × trip miles × a per-mile congestion cost). Only diverted-car trips count. Not marked up by agglomeration.</li>
+      <li><strong>Mohring:</strong> the “more riders → more service → shorter waits for everyone” effect. Valued as a fixed share of consumer surplus (default 18%).</li>
+      <li><strong>Accident:</strong> crashes avoided by removing car trips from the road (diverted trips × miles × a per-mile external accident cost). Not marked up by agglomeration.</li>
+      <li><strong>Emissions:</strong> CO₂ and local air pollution avoided by those same diverted car trips, escalated over time if a carbon-price growth rate is set. Not marked up by agglomeration.</li>
+      <li><strong>Labor:</strong> a small labor-market gain — cheaper commuting slightly offsets the income-tax drag on working. Valued as a share of consumer surplus (default 5%). Not marked up by agglomeration.</li>
+      <li><strong>Agglomeration:</strong> wider productivity gains from better labor-market access. Applied as a % uplift <strong>only on user benefits (CS + Mohring)</strong> — it does <em>not</em> mark up congestion, accident, emissions, or labor. Those externalities and the labor term accrue directly to third parties or the tax base and are not re-priced by agglomeration economies the way commuters' own time savings are.</li>
     </ul>
-    <p><strong>Costs</strong> (annual public burden):</p>
+    <p><strong>Costs</strong> (converted to present values over the horizon):</p>
     <ul>
-      <li><strong>Annualized capital:</strong> construction cost spread over a 30-year asset life at 4% (a standard mortgage-style annuity).</li>
-      <li><strong>Operating deficit / surplus offset:</strong> operating cost minus fare revenue. A deficit adds to cost; a surplus is used to offset capital.</li>
-      <li><strong>MCPF deadweight:</strong> the extra economic loss from raising the subsidy through distortionary taxes (the shadow price above $1 per subsidy dollar).</li>
+      <li><strong>PV capital + renewals, net of residual:</strong> each asset class (civil works, track/systems, rolling stock, fare/IT) is capitalized when built and re-capitalized on schedule whenever it reaches the end of its useful life within the horizon. Assets with remaining useful life left at the end of the horizon contribute a residual value credit that reduces PV cost — see "Residual value" below.</li>
+      <li><strong>PV operating subsidy:</strong> the present value of annual operating cost minus fare revenue, summed only over years where it is a net deficit (years with a surplus offset capital cost instead of adding to it).</li>
+      <li><strong>PV MCPF (marginal cost of public funds):</strong> the present value of the extra economic loss from raising the subsidy through distortionary taxes — the shadow price above $1 per subsidy dollar, applied to the PV subsidy.</li>
+      <li><strong>No depreciation line:</strong> the model does not annualize capital with a separate depreciation charge (that was the v1 approach). In this discounted-lifecycle model, discounting itself supplies the economic depreciation — a dollar of capital spent today is compared against benefits received in future years purely through the discount factor, so no additional depreciation schedule is needed or applied.</li>
     </ul>
-    <p>The benefit–cost ratio is total benefits ÷ net cost (including the MCPF surcharge).</p>
+    <p><strong>Time &amp; asset parameters</strong> (each shifts the PV calculation, not just one year):</p>
+    <ul>
+      <li><strong>Horizon:</strong> the number of years of costs and benefits included in the present-value sum (default 60). Longer horizons capture more mature-year benefit but also more renewal capex; residual value at the horizon's end offsets the truncation.</li>
+      <li><strong>Discount rate:</strong> the annual rate used to convert future-year dollars to present value (default 4%). Higher discount rates shrink the value of distant benefits and renewals faster than near-term ones, which tends to lower the BCR since benefits ramp in gradually while much of the capital cost lands up front.</li>
+      <li><strong>Ridership ramp:</strong> ridership does not jump to its full modeled level in year 1 — it starts at a fraction of the mature level (default 60%) and rises linearly to 100% over the ramp period (default 5 years), reflecting real opening-year ridership build-up.</li>
+      <li><strong>Residual value:</strong> the credit applied at the end of the horizon for any asset class whose last-built tranche still has useful life remaining (e.g., civil works with an 80-year life inside a 60-year horizon). It is subtracted from PV capital cost, so a longer-lived asset mix or a shorter horizon raises the residual credit and improves the BCR.</li>
+    </ul>
   </details>
 </div>
 
@@ -123,7 +133,6 @@
   const CONST = {
     TRIP_LENGTH_MI: 8, OPERATING_DAYS: 300, DISCOUNT_RATE: 0.04, ASSET_LIFE_YEARS: 30,
     CONGESTION_PER_MI: 0.20, ACCIDENT_PER_MI: 0.03, EMISSIONS_PER_MI: 0.015,
-    MOHRING_FACTOR: 0.18, LABOR_FACTOR: 0.05,
   };
   const MILLION = 1e6;
   function crf(rate, years) { const g = Math.pow(1 + rate, years); return (rate * g) / (g - 1); }
@@ -631,7 +640,7 @@ window.TBCR_IO = (function () {
     const expected = (b.CS + b.mohring)*(1+base.gamma) + b.congestion + b.accident + b.emissions + b.labor;
     T.eq('A2 total = userBenefits*(1+g)+externals+labor', b.total, expected, 1e-9);
     T.ok('A2 agglomeration base is CS+mohring only', Math.abs(b.agglomeration - (b.CS+b.mohring)*base.gamma) < 1e-9);
-    T.ok('A1 no standalone crowdingDisamenity key', !('crowdingDisamenity' in b));
+    T.ok('A1 no standalone crowdingDisamenity/direct keys', !('crowdingDisamenity' in b) && !('direct' in b));
     T.ok('A1 crowdingInCS >= 0', b.crowdingInCS >= -1e-9);
     T.ok('A1 crowdingInCS > 0 when crowded', d.phi > 1 ? b.crowdingInCS > 0 : true);
     // A3: labour scales with labor_coef
@@ -688,6 +697,45 @@ window.TBCR_IO = (function () {
     const mcLo = TBCR.computeLifecycle({...P.params, lambda:1.0}, ref).bcrPV;
     const mcHi = TBCR.computeLifecycle({...P.params, lambda:1.5}, ref).bcrPV;
     T.ok('BCR falls as MCPF rises', mcHi < mcLo);
+  }
+  // Task 10: consolidated v2 regression sweep (final)
+  {
+    // every preset: computeLifecycle gives finite bcrPV and positive pvBenefits; npv identity holds
+    Object.keys(PRESETS).forEach(id => {
+      const P = PRESETS[id];
+      const ref = TBCR.calibrateRef(P.params, P.ref);
+      const w = TBCR.computeLifecycle(P.params, ref);
+      T.ok('v2 sweep: finite bcrPV — '+id, isFinite(w.bcrPV));
+      T.ok('v2 sweep: positive pvBenefits — '+id, w.pvBenefits > 0);
+      T.eq('v2 sweep: npv = pvBenefits - pvNetCost — '+id, w.npv, w.pvBenefits - w.pvNetCost, 1e-6);
+    });
+    // bcrPV strictly decreasing in discount rate for us_lrt
+    {
+      const P = PRESETS.us_lrt;
+      const ref = TBCR.calibrateRef(P.params, P.ref);
+      const rates = [0.02, 0.03, 0.04, 0.06];
+      const bcrs = rates.map(r => TBCR.computeLifecycle({ ...P.params, discount_rate: r }, ref).bcrPV);
+      for (let i = 1; i < bcrs.length; i++) {
+        T.ok('v2 sweep: bcrPV falls as discount rate rises ('+rates[i-1]+' -> '+rates[i]+')', bcrs[i] < bcrs[i-1]);
+      }
+    }
+    // A2 invariant: agglomeration marks up user benefits (CS+Mohring) only, excludes externalities/labor
+    // — checked on stockholm_tbana, the highest-gamma preset, where a leak would show up most clearly
+    {
+      const P = PRESETS.stockholm_tbana;
+      const ref = TBCR.calibrateRef(P.params, P.ref);
+      const w = TBCR.computeLifecycle(P.params, ref);
+      const b = w.matureYear.benefits;
+      T.eq('v2 sweep: A2 agglomeration = (CS+mohring)*gamma — stockholm_tbana', b.agglomeration, (b.CS + b.mohring) * P.params.gamma, 1e-6);
+    }
+    // A1 invariant: no standalone crowdingDisamenity or direct keys on any preset's benefits object
+    Object.keys(PRESETS).forEach(id => {
+      const P = PRESETS[id];
+      const ref = TBCR.calibrateRef(P.params, P.ref);
+      const w = TBCR.computeLifecycle(P.params, ref);
+      const b = w.matureYear.benefits;
+      T.ok('v2 sweep: no crowdingDisamenity/direct keys — '+id, !('crowdingDisamenity' in b) && !('direct' in b));
+    });
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
