@@ -278,7 +278,36 @@
     const FRR = opCost > 0 ? (fareRev / opCost) * 100 : 0;
     return { demand, benefits, opCost, fareRev, opNet, R0t, FRR };
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare, DEFAULT_ASSETS, capexSchedule, rampFactor, carbonFactor, discountSeries, annualKernel };
+  function lifecycleCore(params, ref) {
+    const T = params.horizon || 60;
+    const disc = discountSeries(params);
+    const { capex, residual } = capexSchedule(params);
+    const matureT = Math.min(params.ramp_years ?? 5, T);
+    let pvBenefits = 0, pvOpDeficit = 0, pvOpSurplus = 0, pvCapex = 0, matureYear = null;
+    const byYear = [];
+    for (let t = 0; t <= T; t++) {
+      const k = annualKernel(params, ref, t);
+      if (t === matureT) matureYear = k;                    // captured from the loop, not recomputed
+      pvBenefits += k.benefits.total * disc[t];
+      if (k.opNet < 0) pvOpDeficit += (-k.opNet) * disc[t]; else pvOpSurplus += k.opNet * disc[t];
+      pvCapex += (capex[t] || 0) * disc[t];
+      byYear.push({ t, benefits: k.benefits.total, opCost: k.opCost, fareRev: k.fareRev, capex: capex[t] || 0, disc: disc[t] });
+    }
+    pvCapex -= residual * disc[T];
+    const pvOpNet = pvOpDeficit - pvOpSurplus;
+    const subsidyPV = Math.max(pvCapex + pvOpNet, 0);
+    const mcpfPV = (params.lambda - 1) * subsidyPV;
+    const pvNetCost = subsidyPV + mcpfPV;
+    const npv = pvBenefits - pvNetCost;
+    const bcrPV = pvNetCost !== 0 ? pvBenefits / pvNetCost : Infinity;
+    return { npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, mcpfPV, pvCapex, pvOpNet, residual, matureYear, byYear };
+  }
+  function computeLifecycle(params, ref) {
+    const base = lifecycleCore(params, ref);
+    base.rateSens = [0.02, 0.03, 0.04, 0.06].map(r => ({ r, bcr: lifecycleCore({ ...params, discount_rate: r, declining_rate: false }, ref).bcrPV }));
+    return base;
+  }
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, computeWelfare, optimizeFare, DEFAULT_ASSETS, capexSchedule, rampFactor, carbonFactor, discountSeries, annualKernel, lifecycleCore, computeLifecycle };
 })(window);
 </script>
 
@@ -609,6 +638,27 @@ window.TBCR_IO = (function () {
     T.ok('opCost constant across years', Math.abs(y0.opCost - yM.opCost) < 1e-9);
     T.ok('fareRev tracks ridership', yM.fareRev > y0.fareRev);
     T.ok('FRR present', typeof yM.FRR === 'number');
+  }
+  // Task 5: lifecycle NPV/BCR
+  {
+    const P = PRESETS.us_lrt; const ref = TBCR.calibrateRef(P.params, P.ref);
+    const w = TBCR.computeLifecycle(P.params, ref);
+    T.ok('pvBenefits > 0', w.pvBenefits > 0);
+    T.ok('npv = pvBenefits - pvNetCost', Math.abs(w.npv - (w.pvBenefits - w.pvNetCost)) < 1e-6);
+    T.ok('bcrPV finite', isFinite(w.bcrPV));
+    T.ok('byYear spans horizon', w.byYear.length === (P.params.horizon||60)+1);
+    T.ok('matureYear present', w.matureYear && w.matureYear.benefits.total > 0);
+    // BCR strictly decreasing in discount rate
+    const lo = TBCR.computeLifecycle({...P.params, discount_rate:0.02}, ref).bcrPV;
+    const hi = TBCR.computeLifecycle({...P.params, discount_rate:0.06}, ref).bcrPV;
+    T.ok('BCR falls as discount rate rises', hi < lo);
+    // longer civil life -> more residual -> lower net cost -> higher BCR
+    const longer = TBCR.computeLifecycle({...P.params, assets:[{share:0.55,life:120},{share:0.25,life:30},{share:0.15,life:30},{share:0.05,life:12}]}, ref).bcrPV;
+    T.ok('longer asset life raises BCR', longer > w.bcrPV);
+    // MCPF monotonicity
+    const mcLo = TBCR.computeLifecycle({...P.params, lambda:1.0}, ref).bcrPV;
+    const mcHi = TBCR.computeLifecycle({...P.params, lambda:1.5}, ref).bcrPV;
+    T.ok('BCR falls as MCPF rises', mcHi < mcLo);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
