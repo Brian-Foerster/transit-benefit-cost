@@ -19,6 +19,12 @@ Open `transit-bcr.html` in any modern browser (double-click). No build step. Cha
 - **Endogenous demand:** ridership pivots off each preset's reference equilibrium via decomposed
   fare (εf) and generalized-time (εt) elasticities. More service shortens waits and raises ridership;
   crush loads suppress it.
+- **Market-saturation ceiling (`ridership_cap`):** the constant-elasticity pivot is unbounded as
+  fare → 0, so a near-free fare would extrapolate to implausible ridership. Each preset sets a ceiling
+  — the most riders the line could ever carry (its ridership at the lowest fare, ≈1.5–2× the base) —
+  that demand approaches but never exceeds. It sits above the reference fare's ridership, so it bounds
+  only the low-fare corner and leaves the shipped preset results unchanged. Omitted in a custom/v1
+  import, the pivot is left unbounded.
 - **Crowding:** peak load factor drives a crowding multiplier baked into the generalized travel time
   used to compute consumer surplus — it suppresses demand and shows up as a diagnostic ("crowding
   embedded in CS"), not as a separate disamenity line (see [`#glossary`](transit-bcr.html) for detail).

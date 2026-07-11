@@ -194,13 +194,18 @@
     const tIvt = (CONST.TRIP_LENGTH_MI / params.avg_speed) * 60;
     // First-principles wait from the line length when available; else the reduced-form ratio.
     const tWait = (params.line_length != null) ? waitMinutes(params) : ref.tWait0 * (ref.H0 / params.H_train);
+    // Market-saturation ceiling: the constant-elasticity pivot is unbounded as fare -> 0, so a
+    // near-free fare would otherwise extrapolate to implausible ridership. ridership_cap is the most
+    // riders the line could ever carry (its ridership at the lowest fare); demand can approach but
+    // not exceed it. Absent (custom mode) it defaults off (Infinity), preserving the raw pivot.
+    const cap = (params.ridership_cap != null) ? params.ridership_cap : Infinity;
     let R = ref.R0, load = 0, ph = 1, tGen = tIvt + tWait;
     for (let i = 0; i < 30; i++) {
       load = loadFactor(params, R);
       ph = phi(load, params);
       tGen = ph * tIvt + tWait;
       const tGen0 = (ref.tGen0 == null) ? tGen : ref.tGen0;
-      const Rnew = ref.R0 * Math.pow(params.f / ref.f0, params.eps_f) * Math.pow(tGen / tGen0, params.eps_t);
+      const Rnew = Math.min(cap, ref.R0 * Math.pow(params.f / ref.f0, params.eps_f) * Math.pow(tGen / tGen0, params.eps_t));
       const Rnext = 0.5 * R + 0.5 * Rnew;
       if (Math.abs(Rnext - R) < 1e-7) { R = Rnext; break; }
       R = Rnext;
@@ -378,7 +383,7 @@ window.PRESETS = {
     citation: 'Source-doc defaults; US NTD medians. Mature-year benefits (lambda=1, phi=1) ~$72.9M. As shipped (60-yr lifecycle, 4% discount, MCPF + crowding + $0.75/trip marginal passenger cost on): NPV ~-$1.01B, PV-BCR ~0.62.',
     about: 'The reference case — a ~10 km light-rail line in a ~1M metro, moderate on every dimension (40k riders, $1.5B, $38k per daily rider). Over a 60-year discounted lifecycle it shows NPV ≈ −$1.01B and PV-BCR ≈ 0.62, with MCPF (1.30), crowding, and a $0.75/passenger marginal cost on — a marginal, subsidy-heavy project. It is the fixed regression anchor the whole model is calibrated against; long-run fare elasticity −0.6.',
     params: { R:40, dt:12, rider_income:74880, vot_fraction:0.5, alpha:0.30, gamma:0.25, K:1.5, line_length:10,
-      H_train:150, V:3, c_op:180, f:1.75, lambda:1.30, mc_pax:0.75,
+      H_train:150, V:3, c_op:180, f:1.75, lambda:1.30, mc_pax:0.75, ridership_cap:70,
       eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:150,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
@@ -392,7 +397,7 @@ window.PRESETS = {
     citation: 'Crossrail ~£19B; ~600k trips/day design capacity; Centre for Cities high agglomeration; congestion-priced city.',
     about: 'The megaproject that scale justifies — enormous capital ($24B) but enormous ridership (~600k/day), big time savings, and strong agglomeration (35%) in a congestion-priced city. Over the 60-year discounted lifecycle: NPV ≈ +$25B, PV-BCR ≈ 1.64 — the long-life civil assets (residual value) and productivity gains carry the huge capital. Costly, but it pays.',
     params: { R:600, dt:20, rider_income:116480, vot_fraction:0.5, alpha:0.20, gamma:0.35, K:24, line_length:15,
-      H_train:530, V:9, c_op:320, f:3.00, lambda:1.30, mc_pax:0.75,
+      H_train:530, V:9, c_op:320, f:3.00, lambda:1.30, mc_pax:0.75, ridership_cap:1000,
       eps_f:-0.60, eps_t:-0.55, avg_speed:33, seats_per_vehicle:250,
       peak_hour_share:0.17, peak_direction_share:0.62, load_comfort:0.85,
       phi_crush:1.8, service_span_hrs:19,
@@ -406,7 +411,7 @@ window.PRESETS = {
     citation: 'Borjesson et al. 2020: wider economic impacts ~48% of user benefits; high farebox recovery.',
     about: 'The flagship winner — efficient capital (~$23k per daily rider), high farebox recovery, comfortable loads (no crush), and the highest agglomeration uplift here (48%, per Borjesson et al.). An operating surplus offsets part of the capital. Over the 60-year lifecycle: NPV ≈ +$5.2B, PV-BCR ≈ 2.17 — the case where urban rail clearly pays for itself.',
     params: { R:130, dt:14, rider_income:99840, vot_fraction:0.5, alpha:0.35, gamma:0.48, K:3.0, line_length:15,
-      H_train:340, V:6, c_op:160, f:3.50, lambda:1.30, mc_pax:0.75,
+      H_train:340, V:6, c_op:160, f:3.50, lambda:1.30, mc_pax:0.75, ridership_cap:230,
       eps_f:-0.60, eps_t:-0.60, avg_speed:22, seats_per_vehicle:160,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:19,
@@ -420,7 +425,7 @@ window.PRESETS = {
     citation: 'US megaproject cost profile (~$80k per daily rider); agglomeration excluded per FTA practice.',
     about: 'The cost-disease cautionary tale — megaproject capital ($6B, ~$80k per daily rider) on a corridor whose ridership (75k) and benefits are ordinary, with agglomeration ignored (10%, standard US appraisal). Over the 60-year lifecycle: NPV ≈ −$7.4B, PV-BCR ≈ 0.29 — the money went into construction, not outcomes. Levy’s point in one preset: cost control matters far more than the funding mechanism.',
     params: { R:75, dt:12, rider_income:83200, vot_fraction:0.5, alpha:0.30, gamma:0.10, K:6.0, line_length:12,
-      H_train:220, V:4, c_op:260, f:2.00, lambda:1.30, mc_pax:0.75,
+      H_train:220, V:4, c_op:260, f:2.00, lambda:1.30, mc_pax:0.75, ridership_cap:130,
       eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:170,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
@@ -434,7 +439,7 @@ window.PRESETS = {
     citation: 'International best-practice LRT (~$1.2B/10km, ~$17k per daily rider); lean operations.',
     about: 'International best practice — cheap capital (~$1.2B, ~$17k per daily rider), lean operations near break-even, modest fares. Nothing spectacular on any single axis, but the efficiency still clears the bar over the 60-year lifecycle: NPV ≈ +$0.28B, PV-BCR ≈ 1.12 — thinner once the marginal passenger cost is counted. The quiet success: get costs right and a plain project still passes.',
     params: { R:70, dt:12, rider_income:66560, vot_fraction:0.5, alpha:0.30, gamma:0.25, K:1.2, line_length:10,
-      H_train:240, V:4, c_op:110, f:1.50, lambda:1.30, mc_pax:0.75,
+      H_train:240, V:4, c_op:110, f:1.50, lambda:1.30, mc_pax:0.75, ridership_cap:120,
       eps_f:-0.60, eps_t:-0.60, avg_speed:20, seats_per_vehicle:160,
       peak_hour_share:0.17, peak_direction_share:0.60, load_comfort:0.80,
       phi_crush:1.8, service_span_hrs:18,
@@ -448,6 +453,7 @@ window.PRESETS = {
 window.TBCR_IO = (function () {
   const RANGES = {
     R:[10,800], dt:[5,25], VOT:[8,40], rider_income:[15000,250000], vot_fraction:[0.3,0.6], line_length:[2,100],
+    ridership_cap:[10,1600],
     alpha:[0.10,0.60], gamma:[0,0.50], K:[0.3,30],
     H_train:[50,1200], V:[1,12], c_op:[80,400], f:[0.5,5.0], lambda:[1.0,1.5],
     eps_f:[-1.50,-0.10], eps_t:[-1.5,-0.20], avg_speed:[8,45], seats_per_vehicle:[80,300],
@@ -841,9 +847,11 @@ window.TBCR_IO = (function () {
     const on  = TBCR.lifecycleCore({ ...P.params, mc_pax:0.75 }, ref);
     T.ok('mc_pax raises cost (lowers NPV)', on.npv < off.npv);
     T.ok('mc_pax default matches preset', P.params.mc_pax === 0.75);
-    // with mc_pax off, the joint BCR optimum pins fare to the floor; with it on, fare lifts off
-    const oOff = TBCR.optimizeBCR({ ...P.params, mc_pax:0 }, ref, {});
-    const oOn  = TBCR.optimizeBCR({ ...P.params, mc_pax:0.75 }, ref, {});
+    // Isolate the mc_pax mechanism from the ridership ceiling (which brakes the same low-fare corner):
+    // with the cap removed, mc_pax off pins the joint BCR optimum to the floor; with it on, fare lifts.
+    const base = { ...P.params }; delete base.ridership_cap;
+    const oOff = TBCR.optimizeBCR({ ...base, mc_pax:0 }, ref, {});
+    const oOn  = TBCR.optimizeBCR({ ...base, mc_pax:0.75 }, ref, {});
     T.ok('mc_pax off -> BCR-opt fare at floor', oOff.fareStar <= 0.55);
     T.ok('mc_pax on -> BCR-opt fare lifts off the floor', oOn.fareStar > oOff.fareStar + 0.05);
   }
@@ -858,6 +866,22 @@ window.TBCR_IO = (function () {
     const noLL = { ...P.params }; delete noLL.line_length;
     T.ok('no line_length falls back gracefully', isFinite(TBCR.computeDemand(noLL, ref).R));
   }
+  // ridership_cap: market-saturation ceiling bounds the low-fare corner without touching the reference
+  {
+    const P = PRESETS.us_lrt; const ref = TBCR.calibrateRef(P.params, P.ref);
+    // at a near-free fare the raw pivot blows past the ceiling; the cap must pin it
+    const lowFare = { ...P.params, f:0.5 };
+    const uncapped = TBCR.computeDemand({ ...lowFare, ridership_cap:1e9 }, ref).R;
+    const capped   = TBCR.computeDemand(lowFare, ref).R; // preset cap = 70
+    T.ok('raw pivot overshoots the ceiling at low fare', uncapped > P.params.ridership_cap);
+    T.ok('cap pins low-fare ridership at the ceiling', Math.abs(capped - P.params.ridership_cap) < 0.5);
+    // the cap sits above the reference, so it must NOT bind at the shipped fare (anchor preserved)
+    const atRef = TBCR.computeDemand(P.params, ref).R;
+    T.ok('cap does not bind at the reference fare', atRef < P.params.ridership_cap - 1);
+    // absent cap (custom mode) -> raw unbounded pivot
+    const noCap = { ...lowFare }; delete noCap.ridership_cap;
+    T.ok('no cap -> unbounded pivot', TBCR.computeDemand(noCap, ref).R > P.params.ridership_cap);
+  }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
   const summary = `${passed} passed, ${failed} failed`;
@@ -870,7 +894,8 @@ window.TBCR_IO = (function () {
 if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')) {
   const SLIDERS = {
     grpDemand: [
-      ['R','Daily ridership (000s)',10,800,5],['f','Average fare ($)',0.5,5,0.05],
+      ['R','Daily ridership (000s)',10,800,5],['ridership_cap','Max ridership / ceiling (000s)',10,1600,5],
+      ['f','Average fare ($)',0.5,5,0.05],
       ['dt','Time saved/trip (min)',5,25,0.5],
       ['rider_income','Rider income ($/yr)',15000,250000,1000],['vot_fraction','Value of time (% of wage)',0.3,0.6,0.05],
       ['alpha','Car-diverted share',0.10,0.60,0.01],['gamma','Agglomeration uplift',0,0.50,0.01],
@@ -909,6 +934,7 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     rider_income:'Median annual income of the line’s riders (not the area). It sets the value of time, so it’s the equity lever: transit riders often earn below the area median, which lowers measured benefits. Typical: $40–90k.',
     vot_fraction:'Share of the hourly wage used to value travel time. Typical: ~0.5 for commuting, ~0.35 for leisure.',
     line_length:'Full route length (miles). A longer line ties up each train longer per round trip, so the same train-hours give lower frequency and longer waits. Typical: ~8–15 mi (LRT), 30–60+ mi (regional metro).',
+    ridership_cap:'Most riders the line could ever carry — its ridership at a near-free fare (the addressable market). Cutting the fare raises ridership toward this ceiling but never past it, so set it to keep low-fare cases realistic. Typical: ~1.5–2× the base daily ridership.',
     alpha:'Fraction of riders who would otherwise have driven — only these create congestion, accident, and emissions savings. Typical: ~0.30 mixed corridor; ~0.15 transit-dependent; up to ~0.50 pulling car commuters.',
     gamma:'Wider productivity gains from better job access, as a % uplift on rider benefits. Typical: ~0% (US practice), ~24% (UK), up to ~48% (Stockholm). Use only as much as you trust the estimate.',
     K:'Total construction cost — usually the dominant cost and the biggest swing factor in the result. Typical: ~$1–1.5B per 10 km (best practice); US LRT $3–6B; megaprojects far more.',
@@ -987,8 +1013,9 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   function renderBreakdown(w){
     const m=w.matureYear, b=m.benefits;
     const vot=TBCR.votOf(state.params), freq=TBCR.frequency(state.params), wait=TBCR.waitMinutes(state.params);
+    const cap=state.params.ridership_cap, atCap = (cap!=null) && (m.demand.R >= cap - 0.5);
     $('breakdown').innerHTML =
-      `<b>Mature year</b> (year ${state.params.ramp_years}): ridership ${m.demand.R.toFixed(1)}k/day, load ${m.demand.load.toFixed(2)}, farebox ${m.FRR.toFixed(0)}%. `+
+      `<b>Mature year</b> (year ${state.params.ramp_years}): ridership ${m.demand.R.toFixed(1)}k/day${atCap?` <span style="color:#b45309">(at the ${cap}k ceiling)</span>`:''}, load ${m.demand.load.toFixed(2)}, farebox ${m.FRR.toFixed(0)}%. `+
       `Crowding is costing riders ≈ ${fmtM(b.crowdingInCS)} of surplus (already inside CS, not added separately).<br>`+
       `Value of time <b>$${vot.toFixed(0)}/hr</b> (= ${(state.params.vot_fraction*100).toFixed(0)}% of a $${(state.params.rider_income/1000).toFixed(0)}k income). `+
       `Service on the ${state.params.line_length}-mi line: ${freq.toFixed(1)} trains/hr, ${(60/freq).toFixed(1)}-min headway → ${wait.toFixed(1)}-min average wait.<br>`+
