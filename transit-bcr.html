@@ -16,7 +16,9 @@
   .sliders{display:grid;grid-template-columns:repeat(2,1fr);gap:.4rem 1.5rem}
   .row{display:grid;grid-template-columns:1fr 140px 70px;align-items:center;gap:.5rem}
   .row input[type=range]{width:100%}
-  .row output{font-variant-numeric:tabular-nums}
+  .row .ov{width:100%;box-sizing:border-box;font:inherit;color:inherit;font-variant-numeric:tabular-nums;text-align:right;border:1px solid transparent;background:transparent;border-radius:4px;padding:.05rem .2rem}
+  .row .ov:hover{border-color:#cbd5e0;cursor:text}
+  .row .ov:focus{border-color:#2b6cb0;background:#fff;outline:none}
   button,select{padding:.35rem .6rem;font:inherit}
   #warn{color:var(--red);white-space:pre-wrap}
   #breakdown{border:1px solid #eee;border-radius:8px;padding:.75rem;background:#fafafa;font-size:.92rem}
@@ -44,7 +46,7 @@
     .row{grid-template-columns:1fr 3.5rem;grid-template-areas:'label label' 'range val';align-items:center;gap:.1rem .5rem;margin:.4rem 0}
     .row label{grid-area:label}
     .row input[type=range]{grid-area:range}
-    .row output{grid-area:val;text-align:right}
+    .row .ov{grid-area:val;text-align:right}
     .charts{grid-template-columns:1fr}
     .optbar .optlabel{flex-basis:100%}
   }
@@ -978,27 +980,47 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
     asset_it_life:'Useful life of fare and IT equipment before replacement — renewed most often. Typical: 10–15 years.',
   };
 
+  // Each value can be dragged (range) OR typed (the number reads as a text field you can click into).
+  // Both routes funnel through applyKey so the special cases stay in one place: asset-life keys write
+  // into the assets array, 'R' re-anchors the reference level, everything else is a plain param.
+  const SMETA = {}; // key -> {min,max}, for clamping typed values to the slider's own bounds
+  function clampKey(key, v){ const m = SMETA[key]; return m ? Math.min(m.max, Math.max(m.min, v)) : v; }
+  function readParam(key){ return (key in ASSET_IDX) ? state.params.assets[ASSET_IDX[key]].life : state.params[key]; }
+  function applyKey(key, raw){
+    let v = parseFloat(String(raw).replace(/,/g,''));   // tolerate the thousands separator on income
+    if (!isFinite(v)) return null;
+    v = clampKey(key, v);
+    if (key in ASSET_IDX) state.params.assets[ASSET_IDX[key]].life = v;
+    else if (key === 'R') {
+      state.params.R = v;
+      state.ref = TBCR.calibrateRef({ ...state.params, f: state.ref.f0, H_train: state.ref.H0 },
+        { R0: v, f0: state.ref.f0, H0: state.ref.H0, tWait0: state.ref.tWait0 });
+    } else state.params[key] = v;
+    const s = $('s_'+key); if (s) s.value = v;
+    render();
+    return v;
+  }
   function buildSliders(){
     for (const grp in SLIDERS){
       const host = $(grp);
       SLIDERS[grp].forEach(([key,label,min,max,step])=>{
+        SMETA[key] = { min, max };
         const help = HELP[key] || '';
         const wrap=document.createElement('div'); wrap.className='sgroup';
         const row=document.createElement('div'); row.className='row';
         row.innerHTML = `<label for="s_${key}">${label} <button type="button" class="help" aria-label="Explain ${label}" title="${help.replace(/"/g,'&quot;')}">&#9432;</button></label>`+
           `<input type="range" id="s_${key}" min="${min}" max="${max}" step="${step}">`+
-          `<output id="o_${key}"></output>`;
+          `<input type="text" inputmode="decimal" class="ov" id="o_${key}" aria-label="${label} value">`;
         const tip=document.createElement('div'); tip.className='helptext'; tip.hidden=true; tip.textContent=help;
         wrap.appendChild(row); wrap.appendChild(tip); host.appendChild(wrap);
-        // asset_*_life sliders use the ASSET_IDX proxy listener; 'R' (ridership) uses a
-        // dedicated re-anchor handler (it must move the reference level ref.R0, not the
-        // inert params.R). Skip the generic listener for both.
-        if (!(key in ASSET_IDX) && key !== 'R') {
-          row.querySelector('input').addEventListener('input', e=>{
-            state.params[key] = parseFloat(e.target.value);
-            $('o_'+key).textContent = fmtSlider(key, e.target.value); render();
-          });
-        }
+        const rangeEl = $('s_'+key), fieldEl = $('o_'+key);
+        // Drag the slider -> apply, then reflect the value in the typed field.
+        rangeEl.addEventListener('input', e=>{ const v = applyKey(key, e.target.value); if (v!=null) fieldEl.value = fmtSlider(key, v); });
+        // Type -> apply live, but don't reformat mid-keystroke (keeps the caret from jumping).
+        fieldEl.addEventListener('input', ()=> applyKey(key, fieldEl.value));
+        // Commit on blur/Enter -> clamp, re-anchor if needed, and show the canonical formatted value.
+        fieldEl.addEventListener('change', ()=>{ let v = applyKey(key, fieldEl.value); if (v==null) v = readParam(key); fieldEl.value = fmtSlider(key, v); });
+        fieldEl.addEventListener('keydown', e=>{ if (e.key==='Enter') fieldEl.blur(); });
         row.querySelector('.help').addEventListener('click', ()=>{ tip.hidden = !tip.hidden; });
       });
     }
@@ -1007,11 +1029,11 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   function syncInputsFromParams(){
     Object.keys(state.params).forEach(key=>{
       const el = $('s_'+key);
-      if (el){ el.value = state.params[key]; $('o_'+key).textContent = fmtSlider(key, state.params[key]); }
+      if (el){ el.value = state.params[key]; $('o_'+key).value = fmtSlider(key, state.params[key]); }
     });
     Object.keys(ASSET_IDX).forEach(id=>{
       const el = $('s_'+id);
-      if (el){ const life = state.params.assets[ASSET_IDX[id]].life; el.value = life; $('o_'+id).textContent = life; }
+      if (el){ const life = state.params.assets[ASSET_IDX[id]].life; el.value = life; $('o_'+id).value = life; }
     });
     const chk = $('chkDeclining');
     if (chk) chk.checked = !!state.params.declining_rate;
@@ -1082,18 +1104,9 @@ if (typeof document !== 'undefined' && !/[?&]test=1/.test(location.search || '')
   $('btnImport').addEventListener('click', doImport);
   $('btnOptBCR').addEventListener('click', runOptimizeBCR);
   buildSliders(); initPresets(); loadPreset('us_lrt');
-  Object.keys(ASSET_IDX).forEach(id=>{ const el=$('s_'+id); if(el){ el.value = state.params.assets[ASSET_IDX[id]].life; $('o_'+id).textContent=el.value;
-    el.addEventListener('input', e=>{ state.params.assets[ASSET_IDX[id]].life = parseFloat(e.target.value); $('o_'+id).textContent=e.target.value; render(); }); } });
+  // Asset-life sliders, ridership re-anchoring, and typed-value entry are all handled inside
+  // buildSliders via applyKey; only the declining-rate checkbox needs its own listener here.
   $('chkDeclining').addEventListener('change', e=>{ state.params.declining_rate = e.target.checked; render(); });
-  // Ridership slider re-anchors the reference level: it sets ref.R0 (the observed base ridership
-  // at the reference fare/service) and recomputes the reference generalized cost, so dragging it
-  // actually moves ridership. Fare/service still pivot around this anchor.
-  { const el=$('s_R'); if(el){ el.addEventListener('input', e=>{
-      const v = parseFloat(e.target.value); state.params.R = v; $('o_R').textContent = e.target.value;
-      state.ref = TBCR.calibrateRef({ ...state.params, f: state.ref.f0, H_train: state.ref.H0 },
-        { R0: v, f0: state.ref.f0, H0: state.ref.H0, tWait0: state.ref.tWait0 });
-      render();
-  }); } }
 }
 </script>
 
