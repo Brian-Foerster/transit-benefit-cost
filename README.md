@@ -122,7 +122,9 @@ on-screen info box explains what makes each one distinct. As-shipped lifecycle r
 | Low-cost intl | 70k | $1.2B | $17k | +$0.28B | 1.12 | cheap and efficient |
 
 `us_lrt` is held fixed as the regression anchor; the other four were recalibrated to realistic,
-internally-consistent scales.
+internally-consistent scales. A sixth entry, **Custom (from US LRT)**, is an exact clone of the anchor
+meant as a sandbox — reshape any slider (ridership, capital, fares, and especially the ridership
+ceiling) into your own project without disturbing the calibrated baseline.
 
 ## Not modeled
 
