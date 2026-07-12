@@ -110,6 +110,7 @@
       <li><strong>Emissions:</strong> CO₂ and local air pollution avoided by those same diverted car trips, escalated over time if a carbon-price growth rate is set.</li>
       <li><strong>Labor:</strong> a small labor-market gain — cheaper commuting slightly offsets the income-tax drag on working. Valued as a share of consumer surplus (default 5%).</li>
       <li><strong>Agglomeration:</strong> wider productivity gains from better job access. Applied as a % uplift on user benefits (CS + Mohring) only — not on the externality lines or labor.</li>
+      <li><strong>Fare transfer:</strong> when you set a fare away from the preset's reference fare, part of the change in consumer surplus is just money moving between riders and the farebox (already counted, opposite sign, in operating revenue). That transfer isn't a real resource gain, so the agglomeration / Mohring / labour markups apply only to the time-and-access part of surplus, not to it. This is why cutting the fare below the point where ridership stops rising no longer keeps "improving" the NPV. At the reference fare the transfer is zero.</li>
     </ul>
     <p><strong>Costs</strong> (converted to present values over the horizon):</p>
     <ul>
@@ -226,6 +227,19 @@
     // spuriously inflate (GC - GC0) and drive CS negative. Rebuild it from f0 and tGen0.
     const GC0 = ref.f0 + (vot / 60) * ref.tGen0;
     const CS = (CS0 - 0.5 * (ref.R0 + R) * 1000 * D * (demand.GC - GC0)) / 1e6;
+    // A4 — fare transfer is not a resource benefit. The CS trapezoid moves with the *generalized*
+    // cost, which bundles fare + time. The fare part of any move off the reference fare is a pure
+    // transfer between riders and the farebox — and it is already counted, with the opposite sign,
+    // as operating revenue on the cost side. So it must NOT be marked up by the wider-economic
+    // multipliers (agglomeration / Mohring / labour), which represent real productivity and access
+    // gains. Split it out: the markups apply to the time/access surplus (CSreal) only, while the
+    // transfer enters `total` at weight 1 so it still nets against revenue (leaving just the MCPF
+    // cost of the changed subsidy). Without this, once ridership stops responding (e.g. against the
+    // ridership ceiling) cutting the fare manufactures ~1.5x-marked-up "benefits" out of money that
+    // is merely changing hands, and the fare optimum collapses to the floor. At the reference fare
+    // (f == f0) the transfer is exactly zero, so every calibrated preset/anchor result is unchanged.
+    const fareTransfer = 0.5 * (ref.R0 + R) * 1000 * D * (ref.f0 - params.f) / 1e6;
+    const CSreal = CS - fareTransfer;                             // time/access surplus, transfer removed
     // A1 diagnostic (non-additive): surplus that crowding is costing riders vs an uncrowded trip.
     // GC0 cancels: crowdingInCS = 0.5(R0+R)*1000*D*(vot/60)*(phi-1)*tIvt / 1e6  >= 0
     const crowdingInCS = (0.5 * (ref.R0 + R) * 1000 * D * (vot / 60) * (demand.phi - 1) * demand.tIvt) / 1e6;
@@ -233,12 +247,12 @@
     const congestion = (Tcar * CONST.TRIP_LENGTH_MI * CONST.CONGESTION_PER_MI) / 1e6;
     const accident   = (Tcar * CONST.TRIP_LENGTH_MI * CONST.ACCIDENT_PER_MI) / 1e6;
     const emissions  = (Tcar * CONST.TRIP_LENGTH_MI * CONST.EMISSIONS_PER_MI) / 1e6 * (params.carbonFactor ?? 1);
-    const mohring = CS * (params.mohring_coef ?? 0.18);
-    const labor   = CS * (params.labor_coef ?? 0.05);
-    const userBenefits = CS + mohring;                            // A2 base
+    const mohring = CSreal * (params.mohring_coef ?? 0.18);
+    const labor   = CSreal * (params.labor_coef ?? 0.05);
+    const userBenefits = CSreal + mohring;                        // A2 base — real surplus, transfer excluded
     const agglomeration = userBenefits * params.gamma;
-    const total = userBenefits * (1 + params.gamma) + congestion + accident + emissions + labor;
-    return { CS, crowdingInCS, congestion, mohring, accident, emissions, labor, userBenefits, agglomeration, total };
+    const total = userBenefits * (1 + params.gamma) + labor + fareTransfer + congestion + accident + emissions;
+    return { CS, CSreal, fareTransfer, crowdingInCS, congestion, mohring, accident, emissions, labor, userBenefits, agglomeration, total };
   }
   function calibrateRef(params, refSeed) {
     const d0 = computeDemand(params, { ...refSeed, tGen0: null });
@@ -863,13 +877,34 @@ window.TBCR_IO = (function () {
     const on  = TBCR.lifecycleCore({ ...P.params, mc_pax:0.75 }, ref);
     T.ok('mc_pax raises cost (lowers NPV)', on.npv < off.npv);
     T.ok('mc_pax default matches preset', P.params.mc_pax === 0.75);
-    // Isolate the mc_pax mechanism from the ridership ceiling (which brakes the same low-fare corner):
-    // with the cap removed, mc_pax off pins the joint BCR optimum to the floor; with it on, fare lifts.
+    // mc_pax brakes the fare by pricing the marginal passenger. After the A4 fare-transfer fix the
+    // optimum is already interior without it (the transfer no longer manufactures marked-up benefit),
+    // so mc_pax's role is to push that interior optimum HIGHER, not to rescue it from the floor.
     const base = { ...P.params }; delete base.ridership_cap;
     const oOff = TBCR.optimizeBCR({ ...base, mc_pax:0 }, ref, {});
     const oOn  = TBCR.optimizeBCR({ ...base, mc_pax:0.75 }, ref, {});
-    T.ok('mc_pax off -> BCR-opt fare at floor', oOff.fareStar <= 0.55);
-    T.ok('mc_pax on -> BCR-opt fare lifts off the floor', oOn.fareStar > oOff.fareStar + 0.05);
+    T.ok('BCR-opt fare interior even with mc_pax off (A4 removes the floor artifact)', oOff.fareStar > 0.55 && oOff.fareStar < 4.95);
+    T.ok('mc_pax raises the BCR-opt fare', oOn.fareStar > oOff.fareStar + 0.05);
+  }
+  // A4: fare transfer is split out of the marked-up surplus (not a resource benefit)
+  {
+    const P = PRESETS.us_lrt; const ref = TBCR.calibrateRef(P.params, P.ref);
+    // At the reference fare the transfer is exactly zero -> calibrated results untouched.
+    const dRef = TBCR.computeDemand(P.params, ref);
+    const bRef = TBCR.computeBenefits(P.params, dRef, ref);
+    T.ok('fare transfer is zero at the reference fare', Math.abs(bRef.fareTransfer) < 1e-9);
+    T.ok('CSreal equals CS at the reference fare', Math.abs(bRef.CSreal - bRef.CS) < 1e-9);
+    // Below the reference fare the transfer is positive but carries NO agglomeration markup:
+    // agglomeration marks up CSreal only, so it must be < gamma*CS (the old, transfer-inclusive base).
+    const lowF = { ...P.params, f: 0.75 };
+    const bLow = TBCR.computeBenefits(lowF, TBCR.computeDemand(lowF, ref), ref);
+    T.ok('fare transfer positive below the reference fare', bLow.fareTransfer > 0);
+    T.ok('agglomeration no longer marks up the fare transfer', bLow.agglomeration < bLow.CS * P.params.gamma);
+    // The corner is gone: with a ceiling that binds early, NPV no longer improves toward the floor.
+    const capped = { ...P.params, ridership_cap: 42 };   // just above base ridership -> binds ~$1
+    const rc = TBCR.calibrateRef(capped, P.ref);
+    const npv = f => TBCR.lifecycleCore({ ...capped, f }, rc).npv;
+    T.ok('capped fare does not corner to the floor', npv(1.75) > npv(0.5));
   }
   // line length -> first-principles frequency & wait (a longer line buys less frequency per train-hour)
   {

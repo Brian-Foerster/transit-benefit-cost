@@ -88,6 +88,16 @@ per-line explanation):
   marks up consumer surplus + Mohring effect only, not the externality lines (congestion, accident,
   emissions) or the labor-market term. Those accrue to third parties or the tax base directly and
   aren't re-priced by agglomeration economies the way commuters' own time savings are.
+- **A4 — the fare transfer is excluded from the marked-up surplus:** the consumer-surplus trapezoid
+  moves with the *generalized* cost, which bundles fare and time. The fare component of any move off
+  the reference fare is a pure transfer between riders and the farebox — already counted, with the
+  opposite sign, as operating revenue — so it is split out (`fareTransfer`) and the agglomeration /
+  Mohring / labour markups apply only to the real time-and-access surplus (`CSreal`). The transfer
+  still enters total benefits at weight 1, so it nets against revenue and leaves only the MCPF cost of
+  the changed subsidy. Without this, once ridership stops responding (e.g. against the ridership
+  ceiling) cutting the fare manufactured ~1.5×-marked-up "benefits" out of money merely changing
+  hands, collapsing the fare optimum to the floor. At the reference fare the transfer is exactly zero,
+  so all calibrated preset/anchor results are unchanged; only off-reference fare behavior is affected.
 
 ## Anchor vs. as-shipped output
 
