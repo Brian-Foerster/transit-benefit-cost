@@ -1,0 +1,7 @@
+# v3 pipeline wrapper artifacts write LF ("\n") and must round-trip byte-stable
+# (spec 2026-07-14 §9 / G-E6). Pin LF so a fresh checkout on Windows (autocrlf)
+# matches a fresh `node bca-pipeline.mjs` run.
+outputs/bca_*.json    text eol=lf
+costs/profiles/*.json text eol=lf
+bca-pipeline.mjs      text eol=lf
+test-bca-pipeline.mjs text eol=lf

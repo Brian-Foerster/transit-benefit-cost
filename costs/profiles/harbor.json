@@ -1,0 +1,134 @@
+{
+  "schema": "corridor-cost-profile-1",
+  "corridor": "harbor",
+  "title": "Harbor Blvd elevated automated light metro (Fullerton → Santa Ana)",
+  "_about": "Corridor cost profile for the v3 pipeline BCA (spec 2026-07-14 §2.3). The ONLY BCA-owned prices live here and in the engine RANGES (§4). Quantities come from the ridership-model export; this file supplies prices, the corridor service design, the O&M / capital bands, and (INTERIM, until oc 08-A3.3) the central-kernel designation + the five re-priced prior bands the wrapper must not literalize in source (G-E5).",
+
+  "design": {
+    "_note": "spec 04 harbor design: elevated automated light metro, REM-class GoA4, 2-car peak consist, 1.0-mi stations. 12.1-mi corridor (scripts/anchor_from_apc.py, scripts/route43_share.py).",
+    "route_mi": 12.1,
+    "route_km": 19.47,
+    "_route_km_note": "12.1 mi × 1.609344 = 19.473 km.",
+    "stations": 13,
+    "_stations_note": "1.0-mi spacing over 12.1 mi → 13 stations (12 intervals + endpoints).",
+    "cars_per_train": 2,
+    "fleet_cars": 27,
+    "_fleet_note": "spec 04 §3.1 illustrative Harbor fleet: 12 trainsets × 2 cars × 1.12 spare ≈ 27 cars (cycle_time = 2·19.47/47·1.15 ≈ 57 min; ceil(57/5) = 12 trainsets at 5-min peak)."
+  },
+
+  "capital": {
+    "_derivation": "spec 04 §2 linear MECE rate card (2026 US$M): Total = markup × [Fixed + per-km·route_km + per-stn·stations + per-car·cars + special_structures]. LOW = sheet's efficient-agency rates, markup 1.10×1.10 = 1.21. US-TYPICAL = soft 17% × contingency 19% = 1.3923, with a 1.75× delivery-environment factor on viaduct+stations (§3.2) and the §3.3b dense-segment utilities/street rates. Both K in $B (engine params.K units: cost_$M = K·share·1000).",
+    "low": {
+      "K": 2.05,
+      "total_musd": 2050,
+      "usd_per_km": 105.3,
+      "_breakdown": "per-km civil (viaduct 23 + track 4 + traction 8.5 + CBTC 4 + utilities 3 + street-restoration 3 = 45.5)×19.47 = 885.9; stations 28.3×13 = 367.9; fixed (OCC 28 + depot 125) = 153; cars 6.2×27 = 167.4; special structures 4×30 = 120; subtotal 1694.2 × 1.21 = 2050. $/km 105.3 sits inside the sheet's 100-125 $M/km sanity band (§2)."
+    },
+    "us_typical": {
+      "K": 3.62,
+      "total_musd": 3622,
+      "usd_per_km": 186.0,
+      "_breakdown": "per-km (viaduct 23×1.75 + track 4 + traction 8.5 + CBTC 4 + utilities 8 + street 6 = 70.75)×19.47 = 1377.5; stations 28.3×1.75×13 = 643.8; fixed 153; cars 167.4; special structures 4×65 = 260; subtotal 2601.7 × 1.3923 = 3622. $/km 186 is an efficient-US-typical elevated (Transit Costs Project US-elevated comps run higher; §3.2 cross-check row)."
+    }
+  },
+
+  "assets": [
+    { "share": 0.55, "life": 80 },
+    { "share": 0.25, "life": 30 },
+    { "share": 0.15, "life": 30 },
+    { "share": 0.05, "life": 12 }
+  ],
+  "_assets_note": "engine DEFAULT_ASSETS split (civil / track+systems / rolling stock / fare+IT). In-service semantics: capexSchedulePipeline spreads the initial build over build_years and measures renewals + residual from each class's in-service date (spec §5).",
+
+  "build_years": 5,
+  "_build_years_note": "spec §5 default 5 (judgment); rows at 4 / 7.",
+
+  "service_plan": {
+    "_note": "E5 car-km design inputs (spec §7). car_km_yr = eq_days · Σ_periods 2·route_km·(60/headway)·hours·cars_per_train. Central eq_days 300 → car_km_yr ≈ 3.50M car-km/yr (peak 5607 + offpeak 6075 = 11682 car-km/weekday).",
+    "route_km": 19.47,
+    "cars_per_train": 2,
+    "periods": [
+      { "period": "peak", "headway": 5.0, "hours": 6.0 },
+      { "period": "offpeak", "headway": 10.0, "hours": 13.0 }
+    ]
+  },
+
+  "om": {
+    "_note": "GoA4 O&M benchmark bands (spec §7), WIDE, anchored to SkyTrain / Copenhagen Metro / NTD GoA4 automated-metro systems. goaOM(t) = om_fixed_yr + om_var_per_car_km·car_km_yr ($/yr, strictly fiscal). At central: 30M + 4.5×3.50M = 45.8M/yr. om_lo/om_hi rows sweep both endpoints together.",
+    "fixed_yr": { "central": 30000000, "lo": 15000000, "hi": 55000000 },
+    "var_per_car_km": { "central": 4.5, "lo": 3.0, "hi": 8.0 }
+  },
+
+  "traction_gco2_per_km": {
+    "central": 55,
+    "_note": "D8 traction-power carbon debit central = corridor grid rate (SCE). PHYSICAL basis: SCE grid ~200-220 gCO2/kWh × light-metro net traction ~3-4 kWh/car-km ≈ ~700 g/car-km. THE ENGINE RANGES CLAMP traction_gco2_per_km[0,60] (test-locked) BINDS: the effective rate is capped at 60. The term is immaterial to the headline (≈ (55/1e6)·3.5e6·50 = $9.6k/yr vs $2-3.6B capex), so the clamp does not affect results. Central set to 55 (in-band, visible); traction_0 clean-grid zero is the sensitivity. Units tension flagged to the engine owner (T3 report)."
+  },
+
+  "avoidable_rate": {
+    "central": 120,
+    "marginal": 70,
+    "_note": "$/rev-hr, spec §6: marginal → fully-allocated. NTD fully-allocated bus O&M ~$150-200/rev-hr overstates what folding two routes sheds, so central 120 sits below it; avoidable_marginal row = 70 (marginal end)."
+  },
+
+  "avg_fare": {
+    "central": 1.20,
+    "lo": 0.90,
+    "hi": 1.60,
+    "_note": "Effective system revenue per boarding, transfer/pass-discounted. OCTA base fare $2.00 (oc registry default_fare) × ~0.45-0.80 effective (free transfers, day/month passes, senior/disabled discounts). fareRevDay = avg_fare·(total − base_boardings), net-new boardings only (D3)."
+  },
+
+  "base_boardings": 8650,
+  "_base_boardings_note": "Existing 43+543 corridor weekday boardings the new line captures (they already pay the flat fare; only NET-NEW boardings add system revenue — D3, gross overstates ~3.3×). Anchor central: config anchor_low/high 7650/9650 → midpoint 8650.",
+
+  "seat_capacity": {
+    "consist_seats": 300,
+    "peak_trains_per_hour": 12,
+    "seatCap": 3600,
+    "_note": "loadFlag denominator is peak-HOUR seated capacity in the peak direction (seats/hr): 2-car × 150 seats = 300 seats/train × 12 trains/hr (5-min peak headway) = 3600 seats/hr. Central load ≈ R0·0.17·0.60/3600 ≈ 0.32 — below comfort, flag does not fire (D4)."
+  },
+
+  "peak_hour_share": 0.17,
+  "peak_direction_share": 0.60,
+  "_peak_note": "D4 BCA-owned peak-HOUR share (0.17) × peak-direction 0.60 — NOT the export's stage-2 period pkshare U(0.45,0.60), which would overstate hourly load ~3× and fire the flag spuriously (spec §3).",
+
+  "central_kernel": "543_launch_s500",
+  "_central_kernel_note": "INTERIM (spec §2, until oc 08-A3.3): the central-kernel designation is declared here because the export ships the abc_weights label list but does NOT mark which is central. The wrapper resolves the ABC column against this label — never a hardcoded string in wrapper source (G-E5). R1 launch-equivalent central. TODO: migrate to assumptions.json 08-A3.3 `central` flag.",
+
+  "abc_rows": {
+    "abc_s350": "543_launch_s350",
+    "abc_s800": "543_launch_s800"
+  },
+  "_abc_rows_note": "INTERIM (G-E5): the σ-sensitivity ABC tornado rows map to the export's s350/s800 kernels. The kernel LABELS live here (not literalized in wrapper source, same rule as central_kernel); the row IDs (abc_s350/abc_s800) are spec §10 ids the wrapper may carry. TODO: migrate to 08-A3.3.",
+
+  "prior_bands": {
+    "_note": "INTERIM (spec §2, until oc 08-A3.3): (lo,hi,shape) endpoints for the five priors the wrapper RE-PRICES. The export's params arrays are the per-draw SAMPLED values (empirical percentiles), not the band endpoints the pcar_*/vot_behav_* rows require, so the endpoints live here. TODO: migrate to assumptions.json 08-A3.3 machine values section; G-E5's grep gate activates there.",
+    "vot_behav": { "lo": 10.0, "hi": 22.0, "shape": "tri" },
+    "pcar0": { "lo": 0.05, "hi": 0.25, "shape": "uniform" },
+    "pcar1": { "lo": 0.35, "hi": 0.65, "shape": "uniform" },
+    "pcar2": { "lo": 0.55, "hi": 0.85, "shape": "uniform" },
+    "pcarv": { "lo": 0.0, "hi": 0.30, "shape": "uniform" }
+  },
+
+  "central_profile": {
+    "_note": "The named central profile (spec §3, spec 06 presentation principle). λ=1, γ=0, SCC=$50, mohring=0, labor=0 (explicit — NOT left to V2_DEFAULTS 0.18/0.05; G-E3), rebound=0, carbon_growth=0, VOT=$22.50, discount 4% flat, ramp_start 0.8, ramp_years 5, growth 0, horizon 60. eq_days is read from the EXPORT (central = min of its (300,330) band), NOT from here. traction_gco2_per_km / peak shares / build_years / O&M / avoidable_rate / avg_fare are the corridor fields above.",
+    "horizon": 60,
+    "discount_rate": 0.04,
+    "declining_rate": false,
+    "VOT": 22.5,
+    "gamma": 0,
+    "mohring_coef": 0,
+    "labor_coef": 0,
+    "lambda": 1,
+    "scc": 50,
+    "rebound": 0,
+    "carbon_growth": 0,
+    "growth": 0,
+    "ramp_start": 0.8,
+    "ramp_years": 5,
+    "gco2_per_mi": 350,
+    "c_cong": 0.20,
+    "c_acc": 0.03,
+    "c_emis_local": 0.0085,
+    "_ext_note": "c_cong/c_acc/c_emis_local centrals match the engine pipeline defaults and the endogenous CONST (0.20 / 0.03 / local-pollutant 0.0085, D8 re-spec 0.7-1.0¢/mi). Swept by ext_cong/acc/local rows."
+  }
+}

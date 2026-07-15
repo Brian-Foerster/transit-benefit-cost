@@ -1,0 +1,1235 @@
+{
+  "abc_absent_reason": null,
+  "blocked_row_ids": [
+    "fare_sweep",
+    "reliability_restored",
+    "roh"
+  ],
+  "cautions": [
+    "The vot_* and vot_behav_* rows must not be read jointly at opposite extremes (spec 06 D3).",
+    "labor_05 must not be read jointly with the gamma_* rows (spec 06 D9)."
+  ],
+  "central_kernel": "543_launch_s500",
+  "central_kernel_source": "cost-profile (interim; oc 08-A3.3 central flag pending)",
+  "central_profile": {
+    "K_low": 2.05,
+    "K_us_typical": 3.62,
+    "VOT": 22.5,
+    "avg_fare": 1.2,
+    "avoidable_rate": 120,
+    "base_boardings": 8650,
+    "build_years": 5,
+    "c_acc": 0.03,
+    "c_cong": 0.2,
+    "c_emis_local": 0.0085,
+    "carbon_growth": 0,
+    "discount_rate": 0.04,
+    "eq_days": 300,
+    "gamma": 0,
+    "gco2_per_mi": 350,
+    "growth": 0,
+    "horizon": 60,
+    "labor_coef": 0,
+    "lambda": 1,
+    "mohring_coef": 0,
+    "om_fixed_yr": 30000000,
+    "om_var_per_car_km": 4.5,
+    "peak_direction_share": 0.6,
+    "peak_hour_share": 0.17,
+    "ramp_start": 0.8,
+    "ramp_years": 5,
+    "rebound": 0,
+    "scc": 50,
+    "seatCap": 3600,
+    "traction_gco2_per_km": 55
+  },
+  "corridor": "harbor",
+  "cost_bands": [
+    "LOW",
+    "US_TYPICAL"
+  ],
+  "cross": [
+    {
+      "band": "LOW",
+      "bcr": {
+        "p10": 0.083312,
+        "p50": 0.122948,
+        "p90": 0.170167
+      },
+      "ess": null,
+      "lambda": 1,
+      "npv": {
+        "p10": -2612.05,
+        "p50": -2491.43,
+        "p90": -2349.14
+      },
+      "p_npv_pos": 0,
+      "scenario": "fold",
+      "weighting": "uncapped"
+    },
+    {
+      "band": "LOW",
+      "bcr": {
+        "p10": 0.09737,
+        "p50": 0.118867,
+        "p90": 0.142767
+      },
+      "ess": 15090.4,
+      "lambda": 1,
+      "npv": {
+        "p10": -2570.4,
+        "p50": -2503.84,
+        "p90": -2429.39
+      },
+      "p_npv_pos": 0,
+      "scenario": "fold",
+      "weighting": "abc"
+    },
+    {
+      "band": "LOW",
+      "bcr": {
+        "p10": 0.0640861,
+        "p50": 0.0945752,
+        "p90": 0.130898
+      },
+      "ess": null,
+      "lambda": 1.3,
+      "npv": {
+        "p10": -3467.28,
+        "p50": -3343.58,
+        "p90": -3198.34
+      },
+      "p_npv_pos": 0,
+      "scenario": "fold",
+      "weighting": "uncapped"
+    },
+    {
+      "band": "LOW",
+      "bcr": {
+        "p10": 0.0749,
+        "p50": 0.0914359,
+        "p90": 0.10982
+      },
+      "ess": 15090.4,
+      "lambda": 1.3,
+      "npv": {
+        "p10": -3424.96,
+        "p50": -3356.37,
+        "p90": -3279.69
+      },
+      "p_npv_pos": 0,
+      "scenario": "fold",
+      "weighting": "abc"
+    },
+    {
+      "band": "US_TYPICAL",
+      "bcr": {
+        "p10": 0.0525872,
+        "p50": 0.0775089,
+        "p90": 0.107127
+      },
+      "ess": null,
+      "lambda": 1,
+      "npv": {
+        "p10": -4277.29,
+        "p50": -4156.67,
+        "p90": -4014.38
+      },
+      "p_npv_pos": 0,
+      "scenario": "fold",
+      "weighting": "uncapped"
+    },
+    {
+      "band": "US_TYPICAL",
+      "bcr": {
+        "p10": 0.0614333,
+        "p50": 0.0749191,
+        "p90": 0.0899354
+      },
+      "ess": 15090.4,
+      "lambda": 1,
+      "npv": {
+        "p10": -4235.64,
+        "p50": -4169.07,
+        "p90": -4094.62
+      },
+      "p_npv_pos": 0,
+      "scenario": "fold",
+      "weighting": "abc"
+    },
+    {
+      "band": "US_TYPICAL",
+      "bcr": {
+        "p10": 0.0404517,
+        "p50": 0.0596222,
+        "p90": 0.0824057
+      },
+      "ess": null,
+      "lambda": 1.3,
+      "npv": {
+        "p10": -5632.08,
+        "p50": -5508.39,
+        "p90": -5363.15
+      },
+      "p_npv_pos": 0,
+      "scenario": "fold",
+      "weighting": "uncapped"
+    },
+    {
+      "band": "US_TYPICAL",
+      "bcr": {
+        "p10": 0.0472564,
+        "p50": 0.0576301,
+        "p90": 0.0691811
+      },
+      "ess": 15090.4,
+      "lambda": 1.3,
+      "npv": {
+        "p10": -5589.76,
+        "p50": -5521.17,
+        "p90": -5444.49
+      },
+      "p_npv_pos": 0,
+      "scenario": "fold",
+      "weighting": "abc"
+    },
+    {
+      "band": "LOW",
+      "bcr": {
+        "p10": 0.0864863,
+        "p50": 0.12103,
+        "p90": 0.164289
+      },
+      "ess": null,
+      "lambda": 1,
+      "npv": {
+        "p10": -2716.8,
+        "p50": -2606.24,
+        "p90": -2469.76
+      },
+      "p_npv_pos": 0,
+      "scenario": "retain",
+      "weighting": "uncapped"
+    },
+    {
+      "band": "LOW",
+      "bcr": {
+        "p10": 0.0975553,
+        "p50": 0.117426,
+        "p90": 0.139858
+      },
+      "ess": 15090.4,
+      "lambda": 1,
+      "npv": {
+        "p10": -2682.53,
+        "p50": -2617.74,
+        "p90": -2544.3
+      },
+      "p_npv_pos": 0,
+      "scenario": "retain",
+      "weighting": "abc"
+    },
+    {
+      "band": "LOW",
+      "bcr": {
+        "p10": 0.0665279,
+        "p50": 0.0931003,
+        "p90": 0.126376
+      },
+      "ess": null,
+      "lambda": 1.3,
+      "npv": {
+        "p10": -3609.05,
+        "p50": -3495.87,
+        "p90": -3356.64
+      },
+      "p_npv_pos": 0,
+      "scenario": "retain",
+      "weighting": "uncapped"
+    },
+    {
+      "band": "LOW",
+      "bcr": {
+        "p10": 0.0750425,
+        "p50": 0.0903274,
+        "p90": 0.107583
+      },
+      "ess": 15090.4,
+      "lambda": 1.3,
+      "npv": {
+        "p10": -3574.25,
+        "p50": -3507.48,
+        "p90": -3431.91
+      },
+      "p_npv_pos": 0,
+      "scenario": "retain",
+      "weighting": "abc"
+    },
+    {
+      "band": "US_TYPICAL",
+      "bcr": {
+        "p10": 0.0554422,
+        "p50": 0.0774915,
+        "p90": 0.105107
+      },
+      "ess": null,
+      "lambda": 1,
+      "npv": {
+        "p10": -4382.04,
+        "p50": -4271.47,
+        "p90": -4134.99
+      },
+      "p_npv_pos": 0,
+      "scenario": "retain",
+      "weighting": "uncapped"
+    },
+    {
+      "band": "US_TYPICAL",
+      "bcr": {
+        "p10": 0.0625389,
+        "p50": 0.0752069,
+        "p90": 0.0895084
+      },
+      "ess": 15090.4,
+      "lambda": 1,
+      "npv": {
+        "p10": -4347.77,
+        "p50": -4282.97,
+        "p90": -4209.54
+      },
+      "p_npv_pos": 0,
+      "scenario": "retain",
+      "weighting": "abc"
+    },
+    {
+      "band": "US_TYPICAL",
+      "bcr": {
+        "p10": 0.0426479,
+        "p50": 0.0596088,
+        "p90": 0.0808512
+      },
+      "ess": null,
+      "lambda": 1.3,
+      "npv": {
+        "p10": -5773.85,
+        "p50": -5660.68,
+        "p90": -5521.44
+      },
+      "p_npv_pos": 0,
+      "scenario": "retain",
+      "weighting": "uncapped"
+    },
+    {
+      "band": "US_TYPICAL",
+      "bcr": {
+        "p10": 0.0481068,
+        "p50": 0.0578515,
+        "p90": 0.0688526
+      },
+      "ess": 15090.4,
+      "lambda": 1.3,
+      "npv": {
+        "p10": -5739.06,
+        "p50": -5672.29,
+        "p90": -5596.72
+      },
+      "p_npv_pos": 0,
+      "scenario": "retain",
+      "weighting": "abc"
+    }
+  ],
+  "engine_fn": "TBCR.lifecycleCorePipeline",
+  "eq_days": {
+    "band": [
+      300,
+      330
+    ],
+    "central": 300,
+    "source": "export"
+  },
+  "ess": {
+    "543_launch14_s500": 14943.7,
+    "543_launch_s350": 11360.1,
+    "543_launch_s500": 15090.4,
+    "543_launch_s800": 20799.3,
+    "543_matured_s500": 8624.01
+  },
+  "export_seed": 42,
+  "generator": "bca-pipeline.mjs (v3 pipeline mode, spec 2026-07-14 §10)",
+  "headline": {
+    "fold": {
+      "LOW": {
+        "abc": {
+          "bcr": {
+            "p10": 0.09737,
+            "p50": 0.118867,
+            "p90": 0.142767
+          },
+          "ess": 15090.4,
+          "npv": {
+            "p10": -2570.4,
+            "p50": -2503.84,
+            "p90": -2429.39
+          },
+          "p_npv_pos": 0
+        },
+        "uncapped": {
+          "bcr": {
+            "p10": 0.083312,
+            "p50": 0.122948,
+            "p90": 0.170167
+          },
+          "ess": null,
+          "npv": {
+            "p10": -2612.05,
+            "p50": -2491.43,
+            "p90": -2349.14
+          },
+          "p_npv_pos": 0
+        }
+      },
+      "US_TYPICAL": {
+        "abc": {
+          "bcr": {
+            "p10": 0.0614333,
+            "p50": 0.0749191,
+            "p90": 0.0899354
+          },
+          "ess": 15090.4,
+          "npv": {
+            "p10": -4235.64,
+            "p50": -4169.07,
+            "p90": -4094.62
+          },
+          "p_npv_pos": 0
+        },
+        "uncapped": {
+          "bcr": {
+            "p10": 0.0525872,
+            "p50": 0.0775089,
+            "p90": 0.107127
+          },
+          "ess": null,
+          "npv": {
+            "p10": -4277.29,
+            "p50": -4156.67,
+            "p90": -4014.38
+          },
+          "p_npv_pos": 0
+        }
+      }
+    },
+    "retain": {
+      "LOW": {
+        "abc": {
+          "bcr": {
+            "p10": 0.0975553,
+            "p50": 0.117426,
+            "p90": 0.139858
+          },
+          "ess": 15090.4,
+          "npv": {
+            "p10": -2682.53,
+            "p50": -2617.74,
+            "p90": -2544.3
+          },
+          "p_npv_pos": 0
+        },
+        "uncapped": {
+          "bcr": {
+            "p10": 0.0864863,
+            "p50": 0.12103,
+            "p90": 0.164289
+          },
+          "ess": null,
+          "npv": {
+            "p10": -2716.8,
+            "p50": -2606.24,
+            "p90": -2469.76
+          },
+          "p_npv_pos": 0
+        }
+      },
+      "US_TYPICAL": {
+        "abc": {
+          "bcr": {
+            "p10": 0.0625389,
+            "p50": 0.0752069,
+            "p90": 0.0895084
+          },
+          "ess": 15090.4,
+          "npv": {
+            "p10": -4347.77,
+            "p50": -4282.97,
+            "p90": -4209.54
+          },
+          "p_npv_pos": 0
+        },
+        "uncapped": {
+          "bcr": {
+            "p10": 0.0554422,
+            "p50": 0.0774915,
+            "p90": 0.105107
+          },
+          "ess": null,
+          "npv": {
+            "p10": -4382.04,
+            "p50": -4271.47,
+            "p90": -4134.99
+          },
+          "p_npv_pos": 0
+        }
+      }
+    }
+  },
+  "kernel_labels": [
+    "543_launch14_s500",
+    "543_launch_s350",
+    "543_launch_s500",
+    "543_launch_s800",
+    "543_matured_s500"
+  ],
+  "knob_coverage": {
+    "VOT": [
+      "vot_lo",
+      "vot_hi"
+    ],
+    "avoidable_rate": [
+      "avoidable_marginal"
+    ],
+    "build_years": [
+      "build_years_4",
+      "build_years_7"
+    ],
+    "c_acc": [
+      "ext_acc_lo",
+      "ext_acc_hi"
+    ],
+    "c_cong": [
+      "ext_cong_lo",
+      "ext_cong_hi"
+    ],
+    "c_emis_local": [
+      "ext_local_lo",
+      "ext_local_hi"
+    ],
+    "carbon_growth": [
+      "carbon_growth_2"
+    ],
+    "discount_rate": [
+      "disc_2",
+      "disc_3",
+      "disc_7",
+      "disc_declining"
+    ],
+    "eq_days": [
+      "eq_days_330"
+    ],
+    "gamma": [
+      "gamma_015",
+      "gamma_025",
+      "gamma_asc"
+    ],
+    "gco2_per_mi": [
+      "gco2_lo",
+      "gco2_hi"
+    ],
+    "growth": [
+      "growth_1"
+    ],
+    "labor_coef": [
+      "labor_05"
+    ],
+    "lambda": [
+      "lambda_13"
+    ],
+    "mohring_coef": [
+      "mohring_009"
+    ],
+    "om_fixed_yr": [
+      "om_lo",
+      "om_hi"
+    ],
+    "om_var_per_car_km": [
+      "om_lo",
+      "om_hi"
+    ],
+    "peak_hour_share": [
+      "peak_hour_share_lo",
+      "peak_hour_share_hi"
+    ],
+    "ramp_start": [
+      "ramp_start_1",
+      "ramp_start_lo"
+    ],
+    "ramp_years": [
+      "ramp_years_lo",
+      "ramp_years_hi"
+    ],
+    "rebound": [
+      "rebound_05",
+      "rebound_08"
+    ],
+    "scc": [
+      "scc_0",
+      "scc_190"
+    ],
+    "traction_gco2_per_km": [
+      "traction_0"
+    ]
+  },
+  "load_flag": {
+    "fold": {
+      "comfort_threshold": 1,
+      "fires": false,
+      "median_R0": 12347.4,
+      "peak_load_factor_p50": 0.349843
+    },
+    "retain": {
+      "comfort_threshold": 1,
+      "fires": false,
+      "median_R0": 11438,
+      "peak_load_factor_p50": 0.324076
+    }
+  },
+  "n_draws": 40000,
+  "notes": [
+    "fold and retain are reported separately — no blend of any kind (different cost structures; spec 06 §1).",
+    "eq_days central = 300 (anchor_from_apc primary); eq_days_330 is the band far edge (export ships (300,330)).",
+    "Every current design is flat-fare: fare_burden ≡ 0, so the D3 money-metric transfer and its fare_receipts counterpart are 0; the A4 carve-out holds vacuously (spec §8).",
+    "traction_gco2_per_km is clamped by the engine RANGES [0,60]; the physical SCE-grid rate is higher but the term is immaterial to the headline (see profile note + T3 report)."
+  ],
+  "optimism_bias_note": "Flyvbjerg reference-class optimism bias (spec 05 §4.3): rail capital outturns run materially over ex-ante estimates; the US_TYPICAL band internalizes part of this. Reported beside the headline, not applied to the point estimate.",
+  "scenarios": [
+    "fold",
+    "retain"
+  ],
+  "schema_version": "bca-pipeline-1",
+  "service": {
+    "baseOMAvoidedYr": {
+      "fold": 9374400,
+      "retain": 2775600
+    },
+    "car_km_yr": 3504600
+  },
+  "tornado": {
+    "fold": {
+      "blocked": {
+        "fare_sweep": "Δfare≠0 design points (fare-burden / receipts rows) need the fare_receipts export stream; the engine hard-guards on fareBurden≠0 without it (spec §3/§12.6). Every current design is flat-fare (fare_burden ≡ 0)",
+        "reliability_restored": "no reliability term in the engine to restore (v2 §1 deferred all Part-B lines); un-blocks if a Part-B reliability line lands (spec §12)",
+        "roh": "rule-of-half needs a um_roh_* stage-2 accumulator absent from the §3 export; un-blocked by oc rider 1 (spec §10/§12)"
+      },
+      "cell": {
+        "band": "US_TYPICAL",
+        "kernel": "543_launch_s500",
+        "scenario": "fold",
+        "weighting": "abc"
+      },
+      "central_npv_p50": -4169.07,
+      "rows": {
+        "abc_s350": {
+          "delta_npv_p50": 0.806445,
+          "ess": 11360.1,
+          "label": "abc_s350",
+          "npv_p50": -4168.27
+        },
+        "abc_s800": {
+          "delta_npv_p50": -1.40913,
+          "ess": 20799.3,
+          "label": "abc_s800",
+          "npv_p50": -4170.48
+        },
+        "avg_fare_hi": {
+          "delta_npv_p50": 7.95473,
+          "label": "avg_fare_hi",
+          "npv_p50": -4161.12
+        },
+        "avg_fare_lo": {
+          "delta_npv_p50": -5.82549,
+          "label": "avg_fare_lo",
+          "npv_p50": -4174.9
+        },
+        "avoidable_marginal": {
+          "delta_npv_p50": -74.189,
+          "label": "avoidable_marginal",
+          "npv_p50": -4243.26
+        },
+        "build_years_4": {
+          "delta_npv_p50": -110.687,
+          "label": "build_years_4",
+          "npv_p50": -4279.76
+        },
+        "build_years_7": {
+          "delta_npv_p50": 212.2,
+          "label": "build_years_7",
+          "npv_p50": -3956.87
+        },
+        "carbon_growth_2": {
+          "delta_npv_p50": 0.505826,
+          "label": "carbon_growth_2",
+          "npv_p50": -4168.57
+        },
+        "crowding_haircut": {
+          "delta_npv_p50": 0,
+          "label": "crowding_haircut",
+          "npv_p50": -4169.07
+        },
+        "disc_2": {
+          "delta_npv_p50": -659.825,
+          "label": "disc_2",
+          "npv_p50": -4828.9
+        },
+        "disc_3": {
+          "delta_npv_p50": -294.277,
+          "label": "disc_3",
+          "npv_p50": -4463.35
+        },
+        "disc_7": {
+          "delta_npv_p50": 588.608,
+          "label": "disc_7",
+          "npv_p50": -3580.47
+        },
+        "disc_declining": {
+          "delta_npv_p50": -5.517,
+          "label": "disc_declining",
+          "npv_p50": -4174.59
+        },
+        "eq_days_330": {
+          "delta_npv_p50": 24.0319,
+          "label": "eq_days_330",
+          "npv_p50": -4145.04
+        },
+        "ext_acc_hi": {
+          "delta_npv_p50": 1.10266,
+          "label": "ext_acc_hi",
+          "npv_p50": -4167.97
+        },
+        "ext_acc_lo": {
+          "delta_npv_p50": -0.938494,
+          "label": "ext_acc_lo",
+          "npv_p50": -4170.01
+        },
+        "ext_cong_hi": {
+          "delta_npv_p50": 2.671,
+          "label": "ext_cong_hi",
+          "npv_p50": -4166.4
+        },
+        "ext_cong_lo": {
+          "delta_npv_p50": -7.70158,
+          "label": "ext_cong_lo",
+          "npv_p50": -4176.78
+        },
+        "ext_local_hi": {
+          "delta_npv_p50": 0.0755921,
+          "label": "ext_local_hi",
+          "npv_p50": -4169
+        },
+        "ext_local_lo": {
+          "delta_npv_p50": -0.0689368,
+          "label": "ext_local_lo",
+          "npv_p50": -4169.14
+        },
+        "gamma_015": {
+          "delta_npv_p50": 25.1448,
+          "label": "gamma_015",
+          "npv_p50": -4143.93
+        },
+        "gamma_025": {
+          "delta_npv_p50": 41.9827,
+          "label": "gamma_025",
+          "npv_p50": -4127.09
+        },
+        "gamma_asc": {
+          "delta_npv_p50": 48.8325,
+          "label": "gamma_asc",
+          "npv_p50": -4120.24
+        },
+        "gco2_hi": {
+          "delta_npv_p50": 0.120829,
+          "label": "gco2_hi",
+          "npv_p50": -4168.95
+        },
+        "gco2_lo": {
+          "delta_npv_p50": -0.364384,
+          "label": "gco2_lo",
+          "npv_p50": -4169.44
+        },
+        "growth_1": {
+          "delta_npv_p50": 76.2562,
+          "label": "growth_1",
+          "npv_p50": -4092.82
+        },
+        "kappa_1": {
+          "delta_npv_p50": 37.9096,
+          "label": "kappa_1",
+          "npv_p50": -4131.16
+        },
+        "labor_05": {
+          "delta_npv_p50": 8.33992,
+          "label": "labor_05",
+          "npv_p50": -4160.73
+        },
+        "lambda_13": {
+          "delta_npv_p50": -1352.1,
+          "label": "lambda_13",
+          "npv_p50": -5521.17
+        },
+        "mohring_009": {
+          "delta_npv_p50": 29.355,
+          "label": "mohring_009",
+          "npv_p50": -4139.72
+        },
+        "no_asc_cs": {
+          "delta_npv_p50": -155.664,
+          "label": "no_asc_cs",
+          "npv_p50": -4324.74
+        },
+        "nonwork_07": {
+          "delta_npv_p50": -44.9368,
+          "label": "nonwork_07",
+          "npv_p50": -4214.01
+        },
+        "om_hi": {
+          "delta_npv_p50": -707.817,
+          "label": "om_hi",
+          "npv_p50": -4876.89
+        },
+        "om_lo": {
+          "delta_npv_p50": 384.751,
+          "label": "om_lo",
+          "npv_p50": -3784.32
+        },
+        "pcar_hi": {
+          "delta_npv_p50": 3.58282,
+          "label": "pcar_hi",
+          "npv_p50": -4165.49
+        },
+        "pcar_lo": {
+          "delta_npv_p50": -3.30281,
+          "label": "pcar_lo",
+          "npv_p50": -4172.38
+        },
+        "peak_hour_share_hi": {
+          "delta_npv_p50": 0,
+          "label": "peak_hour_share_hi",
+          "note": "loadFlag diagnostic only — no NPV/BCR effect (spec §3/D4)",
+          "npv_p50": -4169.07
+        },
+        "peak_hour_share_lo": {
+          "delta_npv_p50": 0,
+          "label": "peak_hour_share_lo",
+          "note": "loadFlag diagnostic only — no NPV/BCR effect (spec §3/D4)",
+          "npv_p50": -4169.07
+        },
+        "ramp_start_1": {
+          "delta_npv_p50": 3.27109,
+          "label": "ramp_start_1",
+          "npv_p50": -4165.8
+        },
+        "ramp_start_lo": {
+          "delta_npv_p50": -3.06569,
+          "label": "ramp_start_lo",
+          "npv_p50": -4172.14
+        },
+        "ramp_years_hi": {
+          "delta_npv_p50": -1.39598,
+          "label": "ramp_years_hi",
+          "npv_p50": -4170.47
+        },
+        "ramp_years_lo": {
+          "delta_npv_p50": 1.03742,
+          "label": "ramp_years_lo",
+          "npv_p50": -4168.04
+        },
+        "rebound_05": {
+          "delta_npv_p50": -5.13308,
+          "label": "rebound_05",
+          "npv_p50": -4174.21
+        },
+        "rebound_08": {
+          "delta_npv_p50": -8.23762,
+          "label": "rebound_08",
+          "npv_p50": -4177.31
+        },
+        "scc_0": {
+          "delta_npv_p50": -0.6478,
+          "label": "scc_0",
+          "npv_p50": -4169.72
+        },
+        "scc_190": {
+          "delta_npv_p50": 2.09836,
+          "label": "scc_190",
+          "npv_p50": -4166.98
+        },
+        "traction_0": {
+          "delta_npv_p50": 0.183054,
+          "label": "traction_0",
+          "npv_p50": -4168.89
+        },
+        "transfer_fullod": {
+          "delta_npv_p50": 2.12335,
+          "label": "transfer_fullod",
+          "npv_p50": -4166.95
+        },
+        "vot_behav_hi": {
+          "delta_npv_p50": 0,
+          "label": "vot_behav_hi",
+          "note": "behavioral VOT hi — baked into the exported utility; 0.0% at flat fare, needs a stage-2 re-export to sweep (spec 06 D3)",
+          "npv_p50": -4169.07
+        },
+        "vot_behav_lo": {
+          "delta_npv_p50": 0,
+          "label": "vot_behav_lo",
+          "note": "behavioral VOT lo — baked into the exported utility (governs fare response); 0.0% at flat fare, needs a stage-2 re-export to sweep (spec 06 D3)",
+          "npv_p50": -4169.07
+        },
+        "vot_hi": {
+          "delta_npv_p50": 108.382,
+          "label": "vot_hi",
+          "npv_p50": -4060.69
+        },
+        "vot_lo": {
+          "delta_npv_p50": -108.088,
+          "label": "vot_lo",
+          "npv_p50": -4277.16
+        }
+      }
+    },
+    "retain": {
+      "blocked": {
+        "fare_sweep": "Δfare≠0 design points (fare-burden / receipts rows) need the fare_receipts export stream; the engine hard-guards on fareBurden≠0 without it (spec §3/§12.6). Every current design is flat-fare (fare_burden ≡ 0)",
+        "reliability_restored": "no reliability term in the engine to restore (v2 §1 deferred all Part-B lines); un-blocks if a Part-B reliability line lands (spec §12)",
+        "roh": "rule-of-half needs a um_roh_* stage-2 accumulator absent from the §3 export; un-blocked by oc rider 1 (spec §10/§12)"
+      },
+      "cell": {
+        "band": "US_TYPICAL",
+        "kernel": "543_launch_s500",
+        "scenario": "retain",
+        "weighting": "abc"
+      },
+      "central_npv_p50": -4282.97,
+      "rows": {
+        "abc_s350": {
+          "delta_npv_p50": 0.692712,
+          "ess": 11360.1,
+          "label": "abc_s350",
+          "npv_p50": -4282.28
+        },
+        "abc_s800": {
+          "delta_npv_p50": -1.39245,
+          "ess": 20799.3,
+          "label": "abc_s800",
+          "npv_p50": -4284.36
+        },
+        "avg_fare_hi": {
+          "delta_npv_p50": 8.38752,
+          "label": "avg_fare_hi",
+          "npv_p50": -4274.58
+        },
+        "avg_fare_lo": {
+          "delta_npv_p50": -6.18857,
+          "label": "avg_fare_lo",
+          "npv_p50": -4289.16
+        },
+        "avoidable_marginal": {
+          "delta_npv_p50": -21.9661,
+          "label": "avoidable_marginal",
+          "npv_p50": -4304.94
+        },
+        "build_years_4": {
+          "delta_npv_p50": -115.811,
+          "label": "build_years_4",
+          "npv_p50": -4398.78
+        },
+        "build_years_7": {
+          "delta_npv_p50": 221.864,
+          "label": "build_years_7",
+          "npv_p50": -4061.11
+        },
+        "carbon_growth_2": {
+          "delta_npv_p50": 0.493439,
+          "label": "carbon_growth_2",
+          "npv_p50": -4282.48
+        },
+        "crowding_haircut": {
+          "delta_npv_p50": 0,
+          "label": "crowding_haircut",
+          "npv_p50": -4282.97
+        },
+        "disc_2": {
+          "delta_npv_p50": -731.542,
+          "label": "disc_2",
+          "npv_p50": -5014.51
+        },
+        "disc_3": {
+          "delta_npv_p50": -324.029,
+          "label": "disc_3",
+          "npv_p50": -4607
+        },
+        "disc_7": {
+          "delta_npv_p50": 638.616,
+          "label": "disc_7",
+          "npv_p50": -3644.35
+        },
+        "disc_declining": {
+          "delta_npv_p50": -7.55122,
+          "label": "disc_declining",
+          "npv_p50": -4290.52
+        },
+        "eq_days_330": {
+          "delta_npv_p50": 12.6421,
+          "label": "eq_days_330",
+          "npv_p50": -4270.33
+        },
+        "ext_acc_hi": {
+          "delta_npv_p50": 1.07538,
+          "label": "ext_acc_hi",
+          "npv_p50": -4281.9
+        },
+        "ext_acc_lo": {
+          "delta_npv_p50": -1.04547,
+          "label": "ext_acc_lo",
+          "npv_p50": -4284.02
+        },
+        "ext_cong_hi": {
+          "delta_npv_p50": 2.72928,
+          "label": "ext_cong_hi",
+          "npv_p50": -4280.24
+        },
+        "ext_cong_lo": {
+          "delta_npv_p50": -7.8168,
+          "label": "ext_cong_lo",
+          "npv_p50": -4290.79
+        },
+        "ext_local_hi": {
+          "delta_npv_p50": 0.0896196,
+          "label": "ext_local_hi",
+          "npv_p50": -4282.88
+        },
+        "ext_local_lo": {
+          "delta_npv_p50": -0.0850306,
+          "label": "ext_local_lo",
+          "npv_p50": -4283.06
+        },
+        "gamma_015": {
+          "delta_npv_p50": 29.9174,
+          "label": "gamma_015",
+          "npv_p50": -4253.05
+        },
+        "gamma_025": {
+          "delta_npv_p50": 49.8619,
+          "label": "gamma_025",
+          "npv_p50": -4233.11
+        },
+        "gamma_asc": {
+          "delta_npv_p50": 50.3724,
+          "label": "gamma_asc",
+          "npv_p50": -4232.6
+        },
+        "gco2_hi": {
+          "delta_npv_p50": 0.149074,
+          "label": "gco2_hi",
+          "npv_p50": -4282.82
+        },
+        "gco2_lo": {
+          "delta_npv_p50": -0.401226,
+          "label": "gco2_lo",
+          "npv_p50": -4283.37
+        },
+        "growth_1": {
+          "delta_npv_p50": 78.6627,
+          "label": "growth_1",
+          "npv_p50": -4204.31
+        },
+        "kappa_1": {
+          "delta_npv_p50": 39.3112,
+          "label": "kappa_1",
+          "npv_p50": -4243.66
+        },
+        "labor_05": {
+          "delta_npv_p50": 9.94643,
+          "label": "labor_05",
+          "npv_p50": -4273.02
+        },
+        "lambda_13": {
+          "delta_npv_p50": -1389.32,
+          "label": "lambda_13",
+          "npv_p50": -5672.29
+        },
+        "mohring_009": {
+          "delta_npv_p50": 30.1728,
+          "label": "mohring_009",
+          "npv_p50": -4252.8
+        },
+        "no_asc_cs": {
+          "delta_npv_p50": -135.71,
+          "label": "no_asc_cs",
+          "npv_p50": -4418.68
+        },
+        "nonwork_07": {
+          "delta_npv_p50": -46.2617,
+          "label": "nonwork_07",
+          "npv_p50": -4329.23
+        },
+        "om_hi": {
+          "delta_npv_p50": -707.817,
+          "label": "om_hi",
+          "npv_p50": -4990.79
+        },
+        "om_lo": {
+          "delta_npv_p50": 384.751,
+          "label": "om_lo",
+          "npv_p50": -3898.22
+        },
+        "pcar_hi": {
+          "delta_npv_p50": 3.64743,
+          "label": "pcar_hi",
+          "npv_p50": -4279.32
+        },
+        "pcar_lo": {
+          "delta_npv_p50": -3.29811,
+          "label": "pcar_lo",
+          "npv_p50": -4286.27
+        },
+        "peak_hour_share_hi": {
+          "delta_npv_p50": 0,
+          "label": "peak_hour_share_hi",
+          "note": "loadFlag diagnostic only — no NPV/BCR effect (spec §3/D4)",
+          "npv_p50": -4282.97
+        },
+        "peak_hour_share_lo": {
+          "delta_npv_p50": 0,
+          "label": "peak_hour_share_lo",
+          "note": "loadFlag diagnostic only — no NPV/BCR effect (spec §3/D4)",
+          "npv_p50": -4282.97
+        },
+        "ramp_start_1": {
+          "delta_npv_p50": 3.27587,
+          "label": "ramp_start_1",
+          "npv_p50": -4279.7
+        },
+        "ramp_start_lo": {
+          "delta_npv_p50": -3.19034,
+          "label": "ramp_start_lo",
+          "npv_p50": -4286.16
+        },
+        "ramp_years_hi": {
+          "delta_npv_p50": -1.41178,
+          "label": "ramp_years_hi",
+          "npv_p50": -4284.38
+        },
+        "ramp_years_lo": {
+          "delta_npv_p50": 1.03692,
+          "label": "ramp_years_lo",
+          "npv_p50": -4281.93
+        },
+        "rebound_05": {
+          "delta_npv_p50": -5.14369,
+          "label": "rebound_05",
+          "npv_p50": -4288.12
+        },
+        "rebound_08": {
+          "delta_npv_p50": -8.30874,
+          "label": "rebound_08",
+          "npv_p50": -4291.28
+        },
+        "scc_0": {
+          "delta_npv_p50": -0.75072,
+          "label": "scc_0",
+          "npv_p50": -4283.72
+        },
+        "scc_190": {
+          "delta_npv_p50": 2.16487,
+          "label": "scc_190",
+          "npv_p50": -4280.81
+        },
+        "traction_0": {
+          "delta_npv_p50": 0.183054,
+          "label": "traction_0",
+          "npv_p50": -4282.79
+        },
+        "transfer_fullod": {
+          "delta_npv_p50": 2.08364,
+          "label": "transfer_fullod",
+          "npv_p50": -4280.89
+        },
+        "vot_behav_hi": {
+          "delta_npv_p50": 0,
+          "label": "vot_behav_hi",
+          "note": "behavioral VOT hi — baked into the exported utility; 0.0% at flat fare, needs a stage-2 re-export to sweep (spec 06 D3)",
+          "npv_p50": -4282.97
+        },
+        "vot_behav_lo": {
+          "delta_npv_p50": 0,
+          "label": "vot_behav_lo",
+          "note": "behavioral VOT lo — baked into the exported utility (governs fare response); 0.0% at flat fare, needs a stage-2 re-export to sweep (spec 06 D3)",
+          "npv_p50": -4282.97
+        },
+        "vot_hi": {
+          "delta_npv_p50": 111.724,
+          "label": "vot_hi",
+          "npv_p50": -4171.25
+        },
+        "vot_lo": {
+          "delta_npv_p50": -111.501,
+          "label": "vot_lo",
+          "npv_p50": -4394.47
+        }
+      }
+    }
+  },
+  "tornado_row_ids": [
+    "abc_s350",
+    "abc_s800",
+    "avg_fare_hi",
+    "avg_fare_lo",
+    "avoidable_marginal",
+    "build_years_4",
+    "build_years_7",
+    "carbon_growth_2",
+    "crowding_haircut",
+    "disc_2",
+    "disc_3",
+    "disc_7",
+    "disc_declining",
+    "eq_days_330",
+    "ext_acc_hi",
+    "ext_acc_lo",
+    "ext_cong_hi",
+    "ext_cong_lo",
+    "ext_local_hi",
+    "ext_local_lo",
+    "gamma_015",
+    "gamma_025",
+    "gamma_asc",
+    "gco2_hi",
+    "gco2_lo",
+    "growth_1",
+    "kappa_1",
+    "labor_05",
+    "lambda_13",
+    "mohring_009",
+    "no_asc_cs",
+    "nonwork_07",
+    "om_hi",
+    "om_lo",
+    "pcar_hi",
+    "pcar_lo",
+    "peak_hour_share_hi",
+    "peak_hour_share_lo",
+    "ramp_start_1",
+    "ramp_start_lo",
+    "ramp_years_hi",
+    "ramp_years_lo",
+    "rebound_05",
+    "rebound_08",
+    "scc_0",
+    "scc_190",
+    "traction_0",
+    "transfer_fullod",
+    "vot_behav_hi",
+    "vot_behav_lo",
+    "vot_hi",
+    "vot_lo"
+  ]
+}
