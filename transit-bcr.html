@@ -396,9 +396,10 @@
   // scalars (minutes/$/car-miles per weekday) the wrapper collapses from the export; every formula, unit
   // conversion, guard, and bypass is specified in spec 2026-07-14 §3 (see that doc for the derivations).
   //
-  // T2 hooks (E4/E5): goaOM's car_km_yr, baseOMAvoidedYr, and om_fixed_yr/om_var_per_car_km default to 0
-  // (neutral) here; the E4/E5 modules (wrapper-side) inject them. The fiscal plumbing is complete now, so
-  // lifecycleCorePipeline runs end-to-end; only the DERIVATION of car_km_yr / avoided-O&M is deferred.
+  // E4/E5 (T2): goaOM's car_km_yr, baseOMAvoidedYr, and om_fixed_yr/om_var_per_car_km are design-point
+  // constants injected onto `params` by the wrapper; their DERIVATIONS now live in TBCR.carKmYr /
+  // TBCR.baseOMAvoidedYr (below). Absent -> 0 (neutral), and TBCR.pipelineQuantitiesComplete lets the
+  // wrapper assert a DECLARED zero apart from a silent parse-strip. The core just prices the injected scalars.
   function lifecycleCorePipeline(params, quantities) {
     const q = quantities || {};
     const T = params.horizon || 60;
@@ -413,10 +414,13 @@
     const rebound = params.rebound ?? 0, scc = params.scc ?? 50;
     const cCong = params.c_cong ?? 0.20, cAcc = params.c_acc ?? 0.03, cEmisLocal = params.c_emis_local ?? 0.0085;
     const gco2PerMi = params.gco2_per_mi ?? 350, tractionGco2 = params.traction_gco2_per_km ?? 0;
-    // --- E4/E5 term plumbing with NEUTRAL (0) defaults — T2 fills the derivations ---
-    const carKmYr = params.car_km_yr ?? 0;               // TODO(E5/T2): eq_days·Σ_periods 2·route_km·(60/headway)·hours·cars_per_train
-    const baseOMAvoidedYr = params.baseOMAvoidedYr ?? 0; // TODO(E4/T2): Σ_{routes_removed} rev_hours_weekday·eq_days·avoidable_rate
-    const omFixedYr = params.om_fixed_yr ?? 0, omVarPerCarKm = params.om_var_per_car_km ?? 0; // E5 fiscal (car_km_yr is the hook)
+    // --- E4/E5 design-point constants (injected onto params by the wrapper, spec §3). The DERIVATIONS
+    // now live in TBCR.carKmYr / TBCR.baseOMAvoidedYr (E4/E5, this commit); the core prices the injected
+    // scalars. Absent -> 0 (neutral): a streetcar with no folded route legitimately ships baseOMAvoidedYr 0,
+    // and TBCR.pipelineQuantitiesComplete guards the difference between a DECLARED 0 and a silent parse-strip. ---
+    const carKm = params.car_km_yr ?? 0;                 // annual car-km (E5 derivation: TBCR.carKmYr(design))
+    const baseOMAvoided = params.baseOMAvoidedYr ?? 0;   // avoided base O&M $/yr (E4 derivation: TBCR.baseOMAvoidedYr(design))
+    const omFixedYr = params.om_fixed_yr ?? 0, omVarPerCarKm = params.om_var_per_car_km ?? 0; // E5 fiscal rates
 
     // per-draw, per-weekday quantity streams (default 0 for absent streams)
     const umInfra = q.umInfraMin ?? 0, umMargin = q.umMarginMin ?? 0;         // ASC-inclusive equiv-IVT min/weekday
@@ -438,7 +442,7 @@
 
     const disc = discountSeries(params);
     const { capex, residual } = capexSchedulePipeline(params);
-    const goaOMyr = omFixedYr + omVarPerCarKm * carKmYr;                     // E5 GoA4 O&M ($/yr), strictly fiscal
+    const goaOMyr = omFixedYr + omVarPerCarKm * carKm;                       // E5 GoA4 O&M ($/yr), strictly fiscal
 
     const seatCap = params.seatCap, phShare = params.peak_hour_share ?? 0.17, pkDir = params.peak_direction_share ?? 0.60;
     let pvBenefits = 0, pvCapex = 0, pvOM = 0, pvBaseOMAvoided = 0, pvFareRev = 0, loadFlag = null;
@@ -462,14 +466,14 @@
       const laborUSD = labor * um0Day * (VOT / 60);                         // D9 — on the NO-ASC time base too
       const extUSD   = cmDay * (cCong * (1 - rebound) + cAcc + cEmisLocal   // avoided-car externalities; rebound on congestion only
                        + (gco2PerMi / 1e6) * scc * cf);                     // avoided-car carbon: grams->tonnes /1e6 EXPLICIT
-      const tractionUSDyr = (tractionGco2 / 1e6) * carKmYr * scc * cf;      // metro traction carbon: benefit-side negative externality, $/yr, NOT ramped
+      const tractionUSDyr = (tractionGco2 / 1e6) * carKm * scc * cf;        // metro traction carbon: benefit-side negative externality, $/yr, NOT ramped (SAME derived car_km_yr as goaOM)
       // per-weekday streams x eq_days (->$/yr); tractionUSDyr already $/yr; then one dollars->$M /1e6; 1[t>=B]
       const benefit = opening
         ? ((timeUSD + agglom + laborUSD - fareBurdenDay * gt + extUSD) * eqDays - tractionUSDyr) / 1e6
         : 0;
 
       // fund(t) is STRICTLY FISCAL. capex(t) all years; O&M/avoided/rev/receipts only for t >= B.
-      const omBlock = opening ? (goaOMyr - baseOMAvoidedYr - (frDay + frcptDay) * eqDays) / 1e6 : 0;
+      const omBlock = opening ? (goaOMyr - baseOMAvoided - (frDay + frcptDay) * eqDays) / 1e6 : 0;
       const capT = capex[t] || 0;
       const fund = capT + omBlock;
 
@@ -477,7 +481,7 @@
       pvCapex += capT * disc[t];
       if (opening) {
         pvOM += (goaOMyr / 1e6) * disc[t];
-        pvBaseOMAvoided += (baseOMAvoidedYr / 1e6) * disc[t];
+        pvBaseOMAvoided += (baseOMAvoided / 1e6) * disc[t];
         pvFareRev += ((frDay + frcptDay) * eqDays / 1e6) * disc[t];
         if (seatCap > 0) {
           const lf = (R0 * gt * phShare * pkDir) / seatCap;                 // D4 peak-HOUR load; binds in the growth year
@@ -493,6 +497,84 @@
     const npv = pvBenefits - pvNetCost;
     const bcrPV = pvNetCost !== 0 ? pvBenefits / pvNetCost : Infinity;      // Infinity/NA when the floor binds — never divide-by-zero
     return { npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, pvCapex, pvOM, pvBaseOMAvoided, pvFareRev, residual, loadFlag, byYear };
+  }
+  // ============ v3 PIPELINE MODE — E4/E5 derivations + wrapper contracts (spec 2026-07-14 T2) ============
+  // lifecycleCorePipeline (E1) reads car_km_yr / baseOMAvoidedYr / the O&M rates off `params` (design-point
+  // constants, spec §3). These pure functions DERIVE those constants from the corridor cost profile / export
+  // so the W1 wrapper can inject them; the derivations are the one piece T1 deferred (neutral 0 hooks).
+  //
+  // E4 (spec §6): avoided base O&M from folding the bus routes a new rail line replaces.
+  //   baseOMAvoidedYr = Sigma_{route in routesRemoved} revHoursWeekday[route] * eq_days * avoidable_rate   [$/yr]
+  // routesRemoved (scenario-resolved) + base_service (route -> rev_hours_weekday) come from the export;
+  // avoidable_rate ($/rev-hr) is a knob spanning MARGINAL -> FULLY-ALLOCATED (the NTD fully-allocated rate
+  // overstates what folding two routes sheds, so the central sits below it, with a marginal-end row).
+  // eq_days is reused as the weekday->annual SERVICE-HOUR annualizer: a JUDGMENT, not an identity — weekend
+  // service-hour ratios differ from weekend RIDERSHIP ratios (the anchor_from_apc convention), so this
+  // mechanically couples avoided O&M to the eq_days_330 row; within 300-330 the error is small for typical
+  // OCTA weekend service, the alternative being GTFS actual annual rev-hours. Logged, not silent (spec §6).
+  // Empty routesRemoved (streetcar: no single route to fold, base_service {}) -> 0.
+  function baseOMAvoidedYr(design) {
+    const eqDays = design.eq_days ?? 300, rate = design.avoidable_rate ?? 0;
+    const routes = Array.isArray(design.routes_removed) ? design.routes_removed : [];
+    const revHours = design.base_service || {};
+    let weekdayHours = 0;
+    for (const route of routes) {
+      const h = revHours[route];
+      if (typeof h === 'number' && isFinite(h) && h > 0) weekdayHours += h;   // route absent from base_service -> 0 contribution
+    }
+    return weekdayHours * eqDays * rate;
+  }
+  // E5 (spec §7): annual car-kilometres from the corridor service design (shares route_km / per-period
+  // headway / consist INPUTS with spec-04 §3.1, which sizes the fleet but does not itself produce car-km).
+  //   car_km_yr = eq_days * Sigma_p 2 * route_km * (60/headway_p) * hours_p * cars_per_train
+  // 2 = both directions; (60/headway_p) = trains/hr in period p; hours_p = period length; cars_per_train =
+  // consist (optional per-period override p.cars_per_train for GoA4 short off-peak consists, defaulting to
+  // the line consist). Annualized by eq_days (the same weekday->annual judgment as E4). Feeds BOTH the
+  // fiscal goaOM (om_var_per_car_km * car_km_yr) AND, at the SAME value, the benefit-side traction-carbon
+  // debit (tractionUSDyr, spec §7) — one derived quantity, two consumers; the wrapper injects it once.
+  function carKmYr(design) {
+    const eqDays = design.eq_days ?? 300, routeKm = design.route_km ?? 0, lineCars = design.cars_per_train ?? 1;
+    const periods = Array.isArray(design.periods) ? design.periods : [];
+    let perWeekday = 0;
+    for (const p of periods) {
+      const headway = p.headway, hours = p.hours ?? 0, cars = p.cars_per_train ?? lineCars;
+      if (!(headway > 0) || !(hours > 0)) continue;   // a zero/absent-service period contributes no car-km
+      perWeekday += 2 * routeKm * (60 / headway) * hours * cars;
+    }
+    return eqDays * perWeekday;
+  }
+  // T1 carry-forwards 1+2 (spec §3/§4): the E4/E5 design-point constants (car_km_yr, baseOMAvoidedYr,
+  // om_fixed_yr, om_var_per_car_km) and the loadFlag seatCap are injected onto `params` POST-parse — they
+  // are NOT in RANGES, so a wrapper routing a cost profile through parseState would have them STRIPPED as
+  // unknown keys and lifecycleCorePipeline would then read them as a silent 0 (a masked wiring bug, not a
+  // declared zero). This contract asserts every fiscal term is POPULATED (a real value OR an explicit
+  // zero-by-declaration, e.g. car_km_yr:0 for a streetcar) before the pipeline prices them; the wrapper
+  // calls it AFTER injection. Pass { requireSeatCap:true } to also require the loadFlag seatCap (a null
+  // seatCap merely disables the diagnostic, so it is opt-in). Throws on any omission; returns true if OK.
+  const PIPELINE_FISCAL_KEYS = ['baseOMAvoidedYr', 'car_km_yr', 'om_fixed_yr', 'om_var_per_car_km'];
+  function pipelineQuantitiesComplete(params, opts) {
+    const p = params || {}, missing = [];
+    const present = (k) => typeof p[k] === 'number' && isFinite(p[k]);
+    for (const k of PIPELINE_FISCAL_KEYS) if (!present(k)) missing.push(k);
+    if (opts && opts.requireSeatCap && !present('seatCap')) missing.push('seatCap');
+    if (missing.length) throw new Error('pipelineQuantitiesComplete: post-parse injection incomplete — ['
+      + missing.sort().join(', ') + '] absent or non-finite (RANGES strips these; inject AFTER parseState). spec v3 T2 carry-fwd 1/2');
+    return true;
+  }
+  // T1 carry-forward 3 / G-E3 (spec §4/§11): the pipeline CENTRAL profile's EFFECTIVE mohring_coef and
+  // labor_coef must be 0 after ANY parse path. parseState's V2_DEFAULTS backfills 0.18/0.05 into a params
+  // object MISSING those keys — silently reinstating a markup over D2's zero central — so the central
+  // profile writes explicit 0s and the wrapper runs THIS exported assertion post-parse (not merely a unit
+  // test). "Effective" = the value lifecycleCorePipeline uses (params.x ?? 0), so an explicit 0 passes and a
+  // backfilled 0.18/0.05 fires. Throws on a non-zero effective coefficient; returns true if OK.
+  function assertPipelineCentralNeutralized(params) {
+    const p = params || {}, bad = [];
+    if ((p.mohring_coef ?? 0) !== 0) bad.push('mohring_coef=' + p.mohring_coef);
+    if ((p.labor_coef ?? 0) !== 0) bad.push('labor_coef=' + p.labor_coef);
+    if (bad.length) throw new Error('assertPipelineCentralNeutralized: pipeline central must have effective '
+      + 'mohring_coef=labor_coef=0 post-parse (V2_DEFAULTS 0.18/0.05 backfill hazard) — got [' + bad.join(', ')
+      + ']. spec v3 T2 carry-fwd 3 / G-E3');
+    return true;
   }
   function computeLifecycle(params, ref) {
     const base = lifecycleCore(params, ref);
@@ -523,7 +605,7 @@
     const w = lifecycleCore({ ...params, f, H_train: H }, ref);
     return { fareStar: f, hStar: H, bcr: w.bcrPV, npv: w.npv, R: w.matureYear.demand.R };
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, optimizeFare, optimizeBCR, DEFAULT_ASSETS, capexSchedule, capexSchedulePipeline, rampFactor, carbonFactor, discountSeries, annualKernel, lifecycleCore, lifecycleCorePipeline, computeLifecycle, votOf, frequency, waitMinutes };
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, optimizeFare, optimizeBCR, DEFAULT_ASSETS, capexSchedule, capexSchedulePipeline, rampFactor, carbonFactor, discountSeries, annualKernel, lifecycleCore, lifecycleCorePipeline, baseOMAvoidedYr, carKmYr, pipelineQuantitiesComplete, assertPipelineCentralNeutralized, computeLifecycle, votOf, frequency, waitMinutes };
 })(window);
 </script>
 
@@ -1264,6 +1346,133 @@ window.TBCR_IO = (function () {
     const missing = { ...P.params }; delete missing.mohring_coef; delete missing.labor_coef;
     const mp = TBCR_IO.parseState({ version:2, params:missing, referencePoint:P.ref });
     T.eq('E2 V2_DEFAULTS backfills 0.18 when mohring omitted (why explicit 0 is required)', mp.params.mohring_coef, 0.18, 1e-9);
+  }
+  // ================= v3 PIPELINE MODE (E4/E5/E6) — spec 2026-07-14 T2 =================
+  // Additive: the endogenous path and the E1/E2/E3 pipeline tests above are untouched. These exercise
+  // the O&M derivations (avoided base O&M, GoA4 car-km), the lambda incidence of the fiscal offsets, the
+  // post-parse injection contract + G-E3 neutralization assert (T1 carry-forwards 1/2/3), and the
+  // CONFIGURED comparator anchor proving lifecycleCorePipeline reproduces lifecycleCore within 0.5%.
+
+  // E4 (spec §6): baseOMAvoidedYr = Sigma_{routes_removed} rev_hours_weekday * eq_days * avoidable_rate
+  {
+    const design = { routes_removed:['43','543'], base_service:{ '43':100, '543':50 }, eq_days:300, avoidable_rate:120 };
+    T.eq('E4 baseOMAvoidedYr = sum(rev_hours)*eq_days*avoidable_rate', TBCR.baseOMAvoidedYr(design), (100+50)*300*120, 1e-6);
+    T.eq('E4 empty routes_removed -> 0 (streetcar; base_service {})',
+      TBCR.baseOMAvoidedYr({ routes_removed:[], base_service:{}, eq_days:300, avoidable_rate:120 }), 0, 1e-12);
+    T.eq('E4 route absent from base_service contributes 0 (defensive)',
+      TBCR.baseOMAvoidedYr({ routes_removed:['43','999'], base_service:{ '43':100 }, eq_days:300, avoidable_rate:120 }), 100*300*120, 1e-6);
+    T.ok('E4 avoided O&M monotone in avoidable_rate (marginal < fully-allocated)',
+      TBCR.baseOMAvoidedYr({ ...design, avoidable_rate:60 }) < TBCR.baseOMAvoidedYr({ ...design, avoidable_rate:200 }));
+    T.ok('E4 avoided O&M scales with eq_days annualizer (couples to eq_days_330 row)',
+      TBCR.baseOMAvoidedYr({ ...design, eq_days:330 }) > TBCR.baseOMAvoidedYr({ ...design, eq_days:300 }));
+  }
+  // E4/D5: avoided base O&M nets in fund -> lowers subsidy -> lowers net cost AT lambda (incidence)
+  {
+    const p = { ...pipeBase, K:1.5, build_years:5 };
+    const w0 = TBCR.lifecycleCorePipeline(p, { umInfraMin:200000 });
+    const w1 = TBCR.lifecycleCorePipeline({ ...p, baseOMAvoidedYr:5e6 }, { umInfraMin:200000 });
+    T.ok('E4 avoided O&M lowers subsidy (raises NPV)', w1.subsidyPV < w0.subsidyPV && w1.npv > w0.npv);
+    T.eq('E4 avoided O&M reduces subsidy by exactly its PV', w0.subsidyPV - w1.subsidyPV, w1.pvBaseOMAvoided, 1e-6);
+    const wL0 = TBCR.lifecycleCorePipeline({ ...p, lambda:1.3 }, { umInfraMin:200000 });
+    const wL  = TBCR.lifecycleCorePipeline({ ...p, lambda:1.3, baseOMAvoidedYr:5e6 }, { umInfraMin:200000 });
+    T.eq('E4/D5 avoided-O&M net-cost saving scaled at lambda (benefits unscaled)', wL0.pvNetCost - wL.pvNetCost, 1.3*wL.pvBaseOMAvoided, 1e-6);
+  }
+  // E4/D5: incremental FARE REVENUE incidence end-to-end (plumbed T1; lambda-scaled saving here)
+  {
+    const p = { ...pipeBase, K:1.5, build_years:5, lambda:1.3 };
+    const w0 = TBCR.lifecycleCorePipeline(p, { umInfraMin:200000, fareRevDay:0 });
+    const w1 = TBCR.lifecycleCorePipeline(p, { umInfraMin:200000, fareRevDay:8000 });
+    T.eq('E4/D5 fare revenue reduces subsidy by its PV', w0.subsidyPV - w1.subsidyPV, w1.pvFareRev, 1e-6);
+    T.eq('E4/D5 fare-revenue net-cost saving scaled at lambda', w0.pvNetCost - w1.pvNetCost, 1.3*w1.pvFareRev, 1e-6);
+    T.eq('E4/D5 benefits identical (revenue is fiscal-only, never a benefit)', w0.pvBenefits, w1.pvBenefits, 1e-9);
+  }
+  // E5 (spec §7): car_km_yr = eq_days * Sigma_periods 2*route_km*(60/headway)*hours*cars_per_train
+  {
+    const design = { route_km:10, cars_per_train:3, eq_days:300, periods:[{ headway:5, hours:4 }, { headway:10, hours:14 }] };
+    const perWeekday = 2*10*(60/5)*4*3 + 2*10*(60/10)*14*3;   // 2880 + 5040
+    T.eq('E5 car_km_yr from route_km/headway/hours/consist', TBCR.carKmYr(design), 300*perWeekday, 1e-6);
+    T.eq('E5 no service periods -> 0 car-km', TBCR.carKmYr({ route_km:10, cars_per_train:3, eq_days:300, periods:[] }), 0, 1e-12);
+    T.ok('E5 shorter headway (more service) raises car-km',
+      TBCR.carKmYr({ ...design, periods:[{ headway:3, hours:4 },{ headway:10, hours:14 }] }) > TBCR.carKmYr(design));
+    T.eq('E5 optional per-period consist override (GoA4 short off-peak)',
+      TBCR.carKmYr({ route_km:10, cars_per_train:3, eq_days:300, periods:[{ headway:10, hours:10, cars_per_train:1 }] }), 300*2*10*6*10*1, 1e-6);
+  }
+  // E5: derived car_km_yr feeds the GoA4 O&M fiscal line goaOM = om_fixed + om_var*car_km_yr
+  {
+    const p = { ...pipeBase, K:1.5, build_years:5, om_fixed_yr:2e7, om_var_per_car_km:5, car_km_yr:1e6 };
+    const w = TBCR.lifecycleCorePipeline(p, { umInfraMin:100000 });
+    const disc = TBCR.discountSeries(p); let sdOpen = 0; for (let t=5;t<=60;t++) sdOpen += disc[t];
+    T.eq('E5 goaOM = om_fixed + om_var*car_km_yr into pvOM', w.pvOM, ((2e7 + 5*1e6)/1e6)*sdOpen, 1e-6);
+  }
+  // E5/D8: the SAME derived car_km_yr drives the benefit-side traction-carbon debit (grid rate from profile)
+  {
+    const p = { ...pipeBase, car_km_yr:2e6, traction_gco2_per_km:40, scc:50 }, sd = sumDisc(p);
+    const w = TBCR.lifecycleCorePipeline(p, {});
+    T.eq('E5/D8 traction debit uses derived car_km_yr (grid rate * car_km * SCC, annual)', w.pvBenefits, -((40/1e6)*2e6*50)/1e6*sd, 1e-9);
+    T.ok('E5/D8 traction_0 clean-grid row removes the debit', Math.abs(TBCR.lifecycleCorePipeline({ ...p, traction_gco2_per_km:0 }, {}).pvBenefits) < 1e-12);
+  }
+  // E6/G-E2: CONFIGURED comparator anchor — lifecycleCorePipeline reproduces lifecycleCore within 0.5%
+  // when the endogenous path is neutralized to the closed-form pipeline shape (spec §9 FULL list).
+  {
+    const P = PRESETS.us_lrt;
+    // Full neutralization: mohring/labor/gamma 0, lambda 1, mc_pax 0 (opCost constant), phi=1 (load_comfort
+    // high), ramp_start 1 (freeze all years constant -> matches the pipeline's adopt=1), no growth/carbon.
+    const neutral = { ...P.params, load_comfort:10, ramp_start:1, gamma:0, mohring_coef:0, labor_coef:0,
+      lambda:1, mc_pax:0, growth:0, carbon_growth:0 };
+    const ref = TBCR.calibrateRef(neutral, P.ref);
+    const wCore = TBCR.lifecycleCore(neutral, ref);
+    const m = wCore.matureYear;
+    const D = TBCR.CONST.OPERATING_DAYS, TL = TBCR.CONST.TRIP_LENGTH_MI, VOT = TBCR.votOf(neutral), eqDays = 300;
+    // Construct quantities from us_lrt's mature-year streams (spec §9): CS -> equivalent-IVT minutes/weekday
+    // assigned ALL to margin (umInfra=0); diverted car-miles/weekday = alpha*(R*1000)*D*trip_length/eq_days
+    // (the /eq_days de-annualizes); incremental revenue = avg_fare*(total - base_boardings) at base=0.
+    const umMarginMin = m.benefits.CSreal * 1e6 / (VOT / 60) / eqDays;
+    const carMilesDay = neutral.alpha * (m.demand.R * 1000) * D * TL / eqDays;
+    const fareRevDay  = neutral.f * (m.demand.R * 1000) * D / eqDays;
+    const q = { umInfraMin:0, umMarginMin, um0InfraMin:0, um0MarginMin:0, carMilesDay, fareRevDay, R0:m.demand.R*1000 };
+    const pipeParams = { ...neutral, VOT, eq_days:eqDays, build_years:0, ramp_start:1,
+      // externality rates = the comparator's CONST (SCC 0 kills the pipeline's separate carbon term; the
+      // comparator's 0.015/mi emissions map onto c_emis_local at carbon_growth 0):
+      c_cong:TBCR.CONST.CONGESTION_PER_MI, c_acc:TBCR.CONST.ACCIDENT_PER_MI, c_emis_local:TBCR.CONST.EMISSIONS_PER_MI,
+      scc:0, rebound:0, traction_gco2_per_km:0,
+      // om_fixed_yr = the service opCost ($/yr, mc_pax off); car-km / avoided-O&M neutral:
+      om_fixed_yr:neutral.c_op*neutral.H_train*neutral.V*D, om_var_per_car_km:0, car_km_yr:0, baseOMAvoidedYr:0 };
+    const wPipe = TBCR.lifecycleCorePipeline(pipeParams, q);
+    const dNpv = Math.abs(wPipe.npv - wCore.npv) / Math.abs(wCore.npv);
+    const dBcr = Math.abs(wPipe.bcrPV - wCore.bcrPV) / Math.abs(wCore.bcrPV);
+    T.ok('E6/G-E2 anchor: pipeline NPV within 0.5% of configured lifecycleCore'+(dNpv<=0.005?'':' ['+(dNpv*100).toFixed(4)+'%]'), dNpv <= 0.005);
+    T.ok('E6/G-E2 anchor: pipeline PV-BCR within 0.5% of configured lifecycleCore'+(dBcr<=0.005?'':' ['+(dBcr*100).toFixed(4)+'%]'), dBcr <= 0.005);
+  }
+  // T1 carry-forwards 1+2: post-parse injection contract. car_km_yr / baseOMAvoidedYr / seatCap are NOT in
+  // RANGES, so parseState STRIPS them; the pipeline would then read them as a silent 0 (masked wiring bug).
+  {
+    const P = PRESETS.us_lrt;
+    const parsed = TBCR_IO.parseState({ version:2, params:{ ...P.params, car_km_yr:1e6, baseOMAvoidedYr:5e6, seatCap:2000 }, referencePoint:P.ref });
+    T.ok('carry-fwd2 parseState strips car_km_yr/baseOMAvoidedYr/seatCap (the footgun)',
+      !('car_km_yr' in parsed.params) && !('baseOMAvoidedYr' in parsed.params) && !('seatCap' in parsed.params));
+    let threwStripped = false;
+    try { TBCR.pipelineQuantitiesComplete(parsed.params); } catch(e){ threwStripped = /car_km_yr|baseOMAvoidedYr|om_/.test(e.message); }
+    T.ok('carry-fwd1 pipelineQuantitiesComplete throws when fiscal keys stripped', threwStripped);
+    const injected = { ...parsed.params, car_km_yr:0, baseOMAvoidedYr:0, om_fixed_yr:0, om_var_per_car_km:0 };
+    let passed = true; try { TBCR.pipelineQuantitiesComplete(injected); } catch(e){ passed = false; }
+    T.ok('carry-fwd1 contract passes with explicit zero-by-declaration terms', passed);
+    let threwSeat = false;
+    try { TBCR.pipelineQuantitiesComplete(injected, { requireSeatCap:true }); } catch(e){ threwSeat = /seatCap/.test(e.message); }
+    T.ok('carry-fwd2 requireSeatCap enforces seatCap injection', threwSeat);
+    let seatOk = true; try { TBCR.pipelineQuantitiesComplete({ ...injected, seatCap:2000 }, { requireSeatCap:true }); } catch(e){ seatOk = false; }
+    T.ok('carry-fwd2 contract passes when seatCap injected', seatOk);
+  }
+  // T1 carry-forward 3 / G-E3: assertPipelineCentralNeutralized is an EXPORTED post-parse assertion
+  // (not merely a unit test) — the pipeline central's effective mohring/labor must be 0 after any parse.
+  {
+    const P = PRESETS.us_lrt;
+    const central = TBCR_IO.parseState({ version:2, params:{ ...P.params, mohring_coef:0, labor_coef:0 }, referencePoint:P.ref });
+    let ok = true; try { TBCR.assertPipelineCentralNeutralized(central.params); } catch(e){ ok = false; }
+    T.ok('carry-fwd3 assertPipelineCentralNeutralized passes on explicit-0 central', ok);
+    const backfilled = { ...P.params }; delete backfilled.mohring_coef; delete backfilled.labor_coef;
+    const bf = TBCR_IO.parseState({ version:2, params:backfilled, referencePoint:P.ref });
+    let fired = false; try { TBCR.assertPipelineCentralNeutralized(bf.params); } catch(e){ fired = /mohring|labor/.test(e.message); }
+    T.ok('carry-fwd3 assert FIRES on V2_DEFAULTS 0.18/0.05 backfill (post-parse guard)', fired);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
