@@ -8,6 +8,9 @@
 //   (iv)  λ=1 vs λ=1.3 row ordering sanity
 //   (v)   G-E7 knob coverage — every §4 knob appears in tornado_row_ids / blocked map
 //   plus  G-E4 round-trip (weighted newline P50 vs abc_harbor.json) + ESS.
+//   plus  G-E4 seed-drift (existence-gated on bca_export_harbor_seed43.json.gz) — the
+//         ABC-weighted headline BCR P50 must be stable (<=2% drift) across the export's
+//         RNG seed, for all four {fold,retain}x{LOW,US_TYPICAL} ABC cells.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -120,6 +123,29 @@ if (existsSync(join(HERE, 'outputs', 'bca_harbor.json'))) {
     ok('(G-E4) central-kernel ESS matches abc_harbor.json', near(ess(w), ref.ess, 1e-6));
   } else {
     ok('(G-E4) weighted P50 ~ 11310 (abc_harbor.json absent — loose check)', near(p50, 11310, 1e-3));
+  }
+}
+
+// ---- G-E4 seed-drift: ABC-weighted headline BCR P50 stable across export reseed ----
+// Existence-gated on bca_export_harbor_seed43.json.gz (a second stage-2 export drawn
+// from the same central profile at RNG seed 43). Re-runs the wrapper end-to-end against
+// that export and compares the ABC-weighted headline bcr.p50 to the primary export's, for
+// all four ABC cells ({fold,retain} x {LOW,US_TYPICAL}). Actuals measured for this export
+// pair (2026-07): fold/LOW 0.4510%, fold/US_TYPICAL 0.4252%, retain/LOW 0.4130%,
+// retain/US_TYPICAL 0.4277% — all comfortably inside the 2% gate.
+{
+  const seed43Path = join(HERE, '..', 'oc-transit-forecast', 'outputs', 'bca_export_harbor_seed43.json.gz');
+  if (existsSync(seed43Path)) {
+    const { artifact: artifact43 } = runPipeline({ corridor: 'harbor', engine, exportPath: seed43Path });
+    for (const scen of artifact.scenarios) {
+      for (const band of ['LOW', 'US_TYPICAL']) {
+        const a = artifact.headline[scen][band].abc.bcr.p50;
+        const b = artifact43.headline[scen][band].abc.bcr.p50;
+        const drift = Math.abs(a - b) / Math.abs(a);
+        ok('(G-E4 seed-drift) ' + scen + '/' + band + ' ABC BCR P50 drift <= 2% across seed43 (got ' +
+          (drift * 100).toFixed(2) + '%)', drift <= 0.02);
+      }
+    }
   }
 }
 

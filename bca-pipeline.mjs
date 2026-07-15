@@ -295,12 +295,14 @@ const PARAM_ROWS = {
   ramp_start_1: { ramp_start: 1.0 }, ramp_start_lo: { ramp_start: 0.6 },
   ramp_years_lo: { ramp_years: 3 }, ramp_years_hi: { ramp_years: 8 },
   growth_1: { growth: 0.01 },
-  om_lo: { om_fixed_yr: 15e6, om_var_per_car_km: 3.0 }, om_hi: { om_fixed_yr: 55e6, om_var_per_car_km: 8.0 },
   peak_hour_share_lo: { peak_hour_share: 0.08 }, peak_hour_share_hi: { peak_hour_share: 0.30 }, // loadFlag only
   // eq_days_330 override value comes from the EXPORT band (G-E5 — no eq_days value in source);
-  // avoidable_marginal from profile.avoidable_rate.marginal. Both resolved at eval time.
+  // avoidable_marginal from profile.avoidable_rate.marginal. om_lo/om_hi from profile.om's
+  // fixed_yr/var_per_car_km [lo,hi] bands (single source of truth — the profile, not a
+  // duplicated literal here). All resolved at eval time in computeTornado.
   eq_days_330: null,
   avoidable_marginal: null,
+  om_lo: null, om_hi: null,
 };
 const LOADFLAG_ONLY = new Set(['peak_hour_share_lo', 'peak_hour_share_hi']);
 const QUANTITY_ROWS = new Set(['pcar_lo', 'pcar_hi', 'kappa_1', 'nonwork_07', 'transfer_fullod', 'no_asc_cs', 'avg_fare_lo', 'avg_fare_hi', 'crowding_haircut', 'gamma_asc']);
@@ -399,7 +401,9 @@ function computeTornado({ TBCR }, profile, exp, scenario, central, centralCoeffs
   for (const id of Object.keys(PARAM_ROWS)) {
     const ov = id === 'avoidable_marginal' ? { avoidable_rate: profile.avoidable_rate.marginal }
       : id === 'eq_days_330' ? { eq_days: eqDaysHi }
-        : PARAM_ROWS[id];
+        : id === 'om_lo' ? { om_fixed_yr: profile.om.fixed_yr.lo, om_var_per_car_km: profile.om.var_per_car_km.lo }
+          : id === 'om_hi' ? { om_fixed_yr: profile.om.fixed_yr.hi, om_var_per_car_km: profile.om.var_per_car_km.hi }
+            : PARAM_ROWS[id];
     const params = overrideParams(TBCR, central, profile, exp, scenario, ov);
     const v = evalParamRow(params, centralStreams);
     rows[id] = { label: id, npv_p50: v, delta_npv_p50: v - centralP50 };
