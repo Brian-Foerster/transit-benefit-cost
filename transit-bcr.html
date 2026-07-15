@@ -300,6 +300,39 @@
     }
     return { capex, residual };
   }
+  // v3 pipeline mode (spec 2026-07-14 §5, E3): capital spread over a construction period. Each class's
+  // initial build is spread over years 0..B-1 (B = build_years; even by default, params.build_weights may
+  // weight it), the line opens at year B, and renewals + residual are measured from each class's IN-SERVICE
+  // date (year B for the initial build). At B=0 this reduces EXACTLY to the endogenous capexSchedule
+  // (opening at t=0). Additive: capexSchedule (endogenous, opening at t=0) is retained unchanged.
+  function capexSchedulePipeline(params) {
+    const T = params.horizon || 60;
+    const B = Math.max(0, Math.round(params.build_years ?? 5));
+    const classes = params.assets || DEFAULT_ASSETS;
+    // Optional construction-outlay weights over years 0..B-1 (profile may weight; else even split).
+    let weights = null;
+    if (B > 0 && Array.isArray(params.build_weights) && params.build_weights.length === B) {
+      const s = params.build_weights.reduce((a, w) => a + ((isFinite(w) && w > 0) ? w : 0), 0);
+      if (s > 0) weights = params.build_weights.map(w => ((isFinite(w) && w > 0) ? w : 0) / s);
+    }
+    const capex = new Array(T + 1).fill(0);
+    let residual = 0;
+    for (const c of classes) {
+      const cost = (params.K * c.share * 1e9) / 1e6;                          // $M
+      // life >= 5 guard: capexSchedule infinite-loops on life <= 0 (mirrors parseState's [5,120] clamp);
+      // applied here so the pure pipeline fn is safe on a raw cost-profile that skipped parseState (spec §4).
+      const life = Math.max(5, Math.min(120, c.life));
+      // Initial build: spread over construction years 0..B-1 (in-service at B). B=0 -> full cost at year 0.
+      if (B > 0) { for (let y = 0; y < B; y++) capex[y] += cost * (weights ? weights[y] : 1 / B); }
+      else       { capex[0] += cost; }
+      // Renewals: single-year outlays at each subsequent in-service date B+life, B+2*life, ... < T.
+      let last = B;
+      for (let t = B + life; t < T; t += life) { capex[t] += cost; last = t; }
+      const remaining = (life - (T - last)) / life;                          // fraction of last tranche's life left at T
+      residual += cost * Math.max(0, Math.min(1, remaining));
+    }
+    return { capex, residual };
+  }
   function rampFactor(t, params) {
     const rs = params.ramp_start ?? 0.60, ry = params.ramp_years ?? 5, g = params.growth ?? 0;
     const ramp = Math.min(1, rs + (1 - rs) * (ry > 0 ? t / ry : 1));
@@ -355,6 +388,112 @@
     const bcrPV = pvNetCost !== 0 ? pvBenefits / pvNetCost : Infinity;
     return { npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, mcpfPV, pvCapex, pvOpNet, residual, matureYear, byYear };
   }
+  // ================= v3 PIPELINE MODE (spec 2026-07-14, E1) =================
+  // A SECOND entry point beside lifecycleCore: it does NO demand logic (computeDemand, the elasticity
+  // pivot, ridership_cap, votOf, mc_pax, the fare optimizer are all bypassed) and instead PRICES the
+  // exogenous per-draw quantity streams the stage-2 ridership model exports, aggregated over the
+  // discounted lifecycle. Endogenous mode above is untouched. `quantities` are per-draw, per-weekday
+  // scalars (minutes/$/car-miles per weekday) the wrapper collapses from the export; every formula, unit
+  // conversion, guard, and bypass is specified in spec 2026-07-14 §3 (see that doc for the derivations).
+  //
+  // T2 hooks (E4/E5): goaOM's car_km_yr, baseOMAvoidedYr, and om_fixed_yr/om_var_per_car_km default to 0
+  // (neutral) here; the E4/E5 modules (wrapper-side) inject them. The fiscal plumbing is complete now, so
+  // lifecycleCorePipeline runs end-to-end; only the DERIVATION of car_km_yr / avoided-O&M is deferred.
+  function lifecycleCorePipeline(params, quantities) {
+    const q = quantities || {};
+    const T = params.horizon || 60;
+    const B = Math.max(0, Math.round(params.build_years ?? 5));
+    // Pipeline-native defaults. NOTE: mohring/labor/gamma default 0, NOT the endogenous 0.18/0.05 —
+    // pipeline central neutralizes the Mohring markup ((1+mohring_coef) hook, default 0; spec §1).
+    const VOT = params.VOT ?? 22.5, gamma = params.gamma ?? 0;
+    const mohring = params.mohring_coef ?? 0, labor = params.labor_coef ?? 0;
+    const lambda = params.lambda ?? 1, eqDays = params.eq_days ?? 300;
+    const rampStart = params.ramp_start ?? 0.8, rampYears = params.ramp_years ?? 5;
+    const growth = params.growth ?? 0, carbonGrowth = params.carbon_growth ?? 0;
+    const rebound = params.rebound ?? 0, scc = params.scc ?? 50;
+    const cCong = params.c_cong ?? 0.20, cAcc = params.c_acc ?? 0.03, cEmisLocal = params.c_emis_local ?? 0.0085;
+    const gco2PerMi = params.gco2_per_mi ?? 350, tractionGco2 = params.traction_gco2_per_km ?? 0;
+    // --- E4/E5 term plumbing with NEUTRAL (0) defaults — T2 fills the derivations ---
+    const carKmYr = params.car_km_yr ?? 0;               // TODO(E5/T2): eq_days·Σ_periods 2·route_km·(60/headway)·hours·cars_per_train
+    const baseOMAvoidedYr = params.baseOMAvoidedYr ?? 0; // TODO(E4/T2): Σ_{routes_removed} rev_hours_weekday·eq_days·avoidable_rate
+    const omFixedYr = params.om_fixed_yr ?? 0, omVarPerCarKm = params.om_var_per_car_km ?? 0; // E5 fiscal (car_km_yr is the hook)
+
+    // per-draw, per-weekday quantity streams (default 0 for absent streams)
+    const umInfra = q.umInfraMin ?? 0, umMargin = q.umMarginMin ?? 0;         // ASC-inclusive equiv-IVT min/weekday
+    const um0Infra = q.um0InfraMin ?? 0, um0Margin = q.um0MarginMin ?? 0;     // no-ASC counterfactual min/weekday (D1)
+    const fareBurdenDay = q.fareBurdenDay ?? 0;                              // $/weekday (0 at flat fare)
+    const carMilesDay = q.carMilesDay ?? 0;                                  // diverted car-mi/weekday, pre-ramp
+    const fareRevDay = q.fareRevDay ?? 0;                                    // incremental system revenue $/weekday
+    const R0 = q.R0 ?? 0;                                                    // new-line boardings (load diagnostic only)
+    // carMilesFullOdDay is a wrapper-side re-pricing (the transfer_fullod row swaps it in for carMilesDay);
+    // the core prices the shipped carMilesDay.
+    // Interim hard guard (spec §3/§12.6): a Delta-fare!=0 design priced without its receipts leg would be
+    // biased against every fare increase by ~the full transfer, not just the Harberger triangle. The
+    // fare_receipts stream is a pending export addition; until it ships every design is flat-fare (burden 0).
+    const hasReceipts = q.fareReceiptsInfraDay != null || q.fareReceiptsMarginDay != null;
+    if (fareBurdenDay !== 0 && !hasReceipts) {
+      throw new Error('lifecycleCorePipeline: fareBurdenDay != 0 requires a fare_receipts stream (spec v3 §3); output invalid');
+    }
+    const frcptInfra = q.fareReceiptsInfraDay ?? 0, frcptMargin = q.fareReceiptsMarginDay ?? 0;
+
+    const disc = discountSeries(params);
+    const { capex, residual } = capexSchedulePipeline(params);
+    const goaOMyr = omFixedYr + omVarPerCarKm * carKmYr;                     // E5 GoA4 O&M ($/yr), strictly fiscal
+
+    const seatCap = params.seatCap, phShare = params.peak_hour_share ?? 0.17, pkDir = params.peak_direction_share ?? 0.60;
+    let pvBenefits = 0, pvCapex = 0, pvOM = 0, pvBaseOMAvoided = 0, pvFareRev = 0, loadFlag = null;
+    const byYear = [];
+    for (let t = 0; t <= T; t++) {
+      const tau = Math.max(t - B, 0);                                        // opening-relative build-up year
+      const gt = Math.pow(1 + growth, tau);                                  // whole-market growth (all streams)
+      const adopt = Math.min(1, rampStart + (1 - rampStart) * Math.min(rampYears > 0 ? tau / rampYears : 1, 1)); // D6 margin adoption
+      const cf = Math.pow(1 + carbonGrowth, t);                             // carbonFactor(t) — CALENDAR-time price path
+      const opening = t >= B;
+
+      // Margin-only ramp (D6): infra streams grow only; margin streams get adopt·g_t.
+      const umDay  = umInfra * gt + umMargin * adopt * gt;
+      const um0Day = um0Infra * gt + um0Margin * adopt * gt;
+      const cmDay  = carMilesDay * adopt * gt;
+      const frDay  = fareRevDay * adopt * gt;
+      const frcptDay = frcptInfra * gt + frcptMargin * adopt * gt;
+
+      const timeUSD  = umDay * (VOT / 60) * (1 + mohring);                   // CS + Mohring hook (D2)
+      const agglom   = gamma * um0Day * (VOT / 60);                          // gamma on the NO-ASC time base (§12)
+      const laborUSD = labor * um0Day * (VOT / 60);                         // D9 — on the NO-ASC time base too
+      const extUSD   = cmDay * (cCong * (1 - rebound) + cAcc + cEmisLocal   // avoided-car externalities; rebound on congestion only
+                       + (gco2PerMi / 1e6) * scc * cf);                     // avoided-car carbon: grams->tonnes /1e6 EXPLICIT
+      const tractionUSDyr = (tractionGco2 / 1e6) * carKmYr * scc * cf;      // metro traction carbon: benefit-side negative externality, $/yr, NOT ramped
+      // per-weekday streams x eq_days (->$/yr); tractionUSDyr already $/yr; then one dollars->$M /1e6; 1[t>=B]
+      const benefit = opening
+        ? ((timeUSD + agglom + laborUSD - fareBurdenDay * gt + extUSD) * eqDays - tractionUSDyr) / 1e6
+        : 0;
+
+      // fund(t) is STRICTLY FISCAL. capex(t) all years; O&M/avoided/rev/receipts only for t >= B.
+      const omBlock = opening ? (goaOMyr - baseOMAvoidedYr - (frDay + frcptDay) * eqDays) / 1e6 : 0;
+      const capT = capex[t] || 0;
+      const fund = capT + omBlock;
+
+      pvBenefits += benefit * disc[t];
+      pvCapex += capT * disc[t];
+      if (opening) {
+        pvOM += (goaOMyr / 1e6) * disc[t];
+        pvBaseOMAvoided += (baseOMAvoidedYr / 1e6) * disc[t];
+        pvFareRev += ((frDay + frcptDay) * eqDays / 1e6) * disc[t];
+        if (seatCap > 0) {
+          const lf = (R0 * gt * phShare * pkDir) / seatCap;                 // D4 peak-HOUR load; binds in the growth year
+          if (loadFlag === null || lf > loadFlag) loadFlag = lf;
+        }
+      }
+      byYear.push({ t, benefit, fund, capex: capT, disc: disc[t], opening });
+    }
+    pvCapex -= residual * disc[T];                                          // residual credit at horizon
+    const pvFund = pvCapex + pvOM - pvBaseOMAvoided - pvFareRev;
+    const subsidyPV = Math.max(pvFund, 0);                                  // PV-level floor (deliberate v2 divergence, §3)
+    const pvNetCost = subsidyPV * lambda;                                   // D5: net public funding scaled at lambda; benefits never scaled
+    const npv = pvBenefits - pvNetCost;
+    const bcrPV = pvNetCost !== 0 ? pvBenefits / pvNetCost : Infinity;      // Infinity/NA when the floor binds — never divide-by-zero
+    return { npv, bcrPV, pvBenefits, pvNetCost, subsidyPV, pvCapex, pvOM, pvBaseOMAvoided, pvFareRev, residual, loadFlag, byYear };
+  }
   function computeLifecycle(params, ref) {
     const base = lifecycleCore(params, ref);
     base.rateSens = [0.02, 0.03, 0.04, 0.06].map(r => ({ r, bcr: lifecycleCore({ ...params, discount_rate: r, declining_rate: false }, ref).bcrPV }));
@@ -384,7 +523,7 @@
     const w = lifecycleCore({ ...params, f, H_train: H }, ref);
     return { fareStar: f, hStar: H, bcr: w.bcrPV, npv: w.npv, R: w.matureYear.demand.R };
   }
-  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, optimizeFare, optimizeBCR, DEFAULT_ASSETS, capexSchedule, rampFactor, carbonFactor, discountSeries, annualKernel, lifecycleCore, computeLifecycle, votOf, frequency, waitMinutes };
+  root.TBCR = { CONST, crf, computeCosts, phi, loadFactor, computeDemand, computeBenefits, calibrateRef, optimizeFare, optimizeBCR, DEFAULT_ASSETS, capexSchedule, capexSchedulePipeline, rampFactor, carbonFactor, discountSeries, annualKernel, lifecycleCore, lifecycleCorePipeline, computeLifecycle, votOf, frequency, waitMinutes };
 })(window);
 </script>
 
@@ -490,7 +629,14 @@ window.TBCR_IO = (function () {
     peak_hour_share:[0.08,0.30], peak_direction_share:[0.50,0.75], load_comfort:[0.5,1.0],
     phi_crush:[1.2,2.5], service_span_hrs:[10,24],
     horizon:[20,100], discount_rate:[0.01,0.08], ramp_start:[0.2,1.0], ramp_years:[1,20],
-    growth:[0,0.02], carbon_growth:[0,0.07], mohring_coef:[0.05,0.30], labor_coef:[0,0.15], mc_pax:[0,3],
+    // mohring_coef floor -> 0 (was 0.05): a 0.05 floor would silently reinstate a 5% markup over the
+    // pipeline central of 0 (spec v3 §4). labor_coef floor is already 0.
+    growth:[0,0.02], carbon_growth:[0,0.07], mohring_coef:[0,0.30], labor_coef:[0,0.15], mc_pax:[0,3],
+    // v3 pipeline-mode knobs (spec 2026-07-14 §4). Without RANGES bounds parseState strips them as
+    // unknown keys, so every pipeline param needs explicit [lo,hi].
+    eq_days:[200,366], c_cong:[0.05,0.25], c_acc:[0.01,0.05], c_emis_local:[0.007,0.010],
+    gco2_per_mi:[200,400], scc:[0,300], rebound:[0,0.8], traction_gco2_per_km:[0,60],
+    build_years:[3,10], avoidable_rate:[50,200], om_var_per_car_km:[2,12], om_fixed_yr:[0,1e9],
   };
   const V2_DEFAULTS = { horizon:60, discount_rate:0.04, declining_rate:false, ramp_start:0.60,
     ramp_years:5, growth:0, carbon_growth:0, mohring_coef:0.18, labor_coef:0.05, mc_pax:0.75 };
@@ -932,6 +1078,192 @@ window.TBCR_IO = (function () {
     // absent cap (custom mode) -> raw unbounded pivot
     const noCap = { ...lowFare }; delete noCap.ridership_cap;
     T.ok('no cap -> unbounded pivot', TBCR.computeDemand(noCap, ref).R > P.params.ridership_cap);
+  }
+  // ================= v3 PIPELINE MODE (E1/E2/E3) — spec 2026-07-14 =================
+  // Additive: the endogenous path above is untouched. These exercise the exogenous-quantity
+  // pricing core, the construction-period capex, and the RANGES/floor boundary hygiene.
+  const pipeBase = { horizon:60, discount_rate:0.04, declining_rate:false, K:0,
+    build_years:0, ramp_start:1, ramp_years:5, growth:0, carbon_growth:0,
+    VOT:22.5, gamma:0, mohring_coef:0, labor_coef:0, lambda:1, eq_days:300,
+    scc:50, rebound:0, c_cong:0.20, c_acc:0.03, c_emis_local:0.0085,
+    gco2_per_mi:350, traction_gco2_per_km:0, car_km_yr:0,
+    assets:[{share:0.55,life:80},{share:0.25,life:30},{share:0.15,life:30},{share:0.05,life:12}] };
+  const sumDisc = (p) => { const d = TBCR.discountSeries(p); let s=0; for (let t=0;t<=(p.horizon||60);t++) s+=d[t]; return s; };
+  // E1: benefit unit audit — minutes × VOT/60 × eq_days ÷ 1e6, K=0 ⇒ floor binds ⇒ bcr Infinity
+  {
+    const w = TBCR.lifecycleCorePipeline(pipeBase, { umInfraMin:1000 });
+    const sd = sumDisc(pipeBase);
+    T.eq('E1 benefit unit audit (min×VOT/60×eq_days/1e6)', w.pvBenefits, 1000*(22.5/60)*300/1e6*sd, 1e-6);
+    T.ok('E1 K=0 -> subsidyPV 0 -> pvNetCost 0 -> bcrPV Infinity', w.subsidyPV === 0 && w.pvNetCost === 0 && w.bcrPV === Infinity);
+    T.eq('E1 npv = pvBenefits when net cost 0', w.npv, w.pvBenefits, 1e-9);
+    T.ok('E1 byYear spans horizon', w.byYear.length === 61);
+  }
+  // E1/E3: 1[t>=B] indicator — construction years carry capex, no benefit; opening at B
+  {
+    const p = { ...pipeBase, K:1.5, build_years:5 };
+    const w = TBCR.lifecycleCorePipeline(p, { umInfraMin:100000 });
+    T.ok('E1/E3 construction years carry capex', w.byYear[0].capex > 0 && w.byYear[4].capex > 0);
+    T.ok('E1 1[t>=B]: no benefit during construction', w.byYear[0].benefit === 0 && w.byYear[4].benefit === 0);
+    T.ok('E1 benefit begins at opening year B', w.byYear[5].benefit > 0);
+  }
+  // E1: BCR strictly decreasing in discount rate (structural invariant)
+  {
+    const p = { ...pipeBase, K:1.5, build_years:5 }, q = { umInfraMin:200000 };
+    const lo = TBCR.lifecycleCorePipeline({ ...p, discount_rate:0.02 }, q).bcrPV;
+    const hi = TBCR.lifecycleCorePipeline({ ...p, discount_rate:0.06 }, q).bcrPV;
+    T.ok('E1 BCR strictly decreasing in discount rate', isFinite(lo) && isFinite(hi) && hi < lo);
+  }
+  // E1: incremental revenue offsets subsidy; MCPF scales net cost at lambda (D5)
+  {
+    const p = { ...pipeBase, K:1.5, build_years:5 };
+    const w0 = TBCR.lifecycleCorePipeline(p, { umInfraMin:200000, fareRevDay:0 });
+    const w1 = TBCR.lifecycleCorePipeline(p, { umInfraMin:200000, fareRevDay:5000 });
+    T.ok('E1 incremental revenue lowers subsidy (raises NPV)', w1.subsidyPV < w0.subsidyPV && w1.npv > w0.npv);
+    const wLoL = TBCR.lifecycleCorePipeline({ ...p, lambda:1.0 }, { umInfraMin:200000 });
+    const wHiL = TBCR.lifecycleCorePipeline({ ...p, lambda:1.3 }, { umInfraMin:200000 });
+    T.ok('E1 MCPF: higher lambda raises net cost, lowers NPV', wHiL.pvNetCost > wLoL.pvNetCost && wHiL.npv < wLoL.npv);
+    T.eq('E1 pvNetCost = subsidyPV*lambda (D5)', wHiL.pvNetCost, wHiL.subsidyPV*1.3, 1e-9);
+  }
+  // E1: subsidyPV floors at the PV level; bcr reported Infinity (never divide-by-zero)
+  {
+    const w = TBCR.lifecycleCorePipeline({ ...pipeBase, K:0 }, { umInfraMin:100, fareRevDay:1000 });
+    T.ok('E1 subsidyPV floors at 0 (PV level)', w.subsidyPV === 0 && w.pvNetCost === 0);
+    T.ok('E1 bcrPV Infinity when floor binds (never NaN)', w.bcrPV === Infinity && w.pvBenefits > 0);
+  }
+  // E1: gamma & labor mark up um0 (no-ASC); mohring marks up um (ASC-inclusive) — §12/D8/D9
+  {
+    const p = pipeBase, umOnly = { umInfraMin:1000, um0InfraMin:0 };
+    const wA = TBCR.lifecycleCorePipeline({ ...p, gamma:0.5, labor_coef:0.3 }, umOnly);
+    const wB = TBCR.lifecycleCorePipeline({ ...p, gamma:0,   labor_coef:0   }, umOnly);
+    T.eq('E1 gamma/labor act on um0 (zero here) -> no effect on umDay', wA.pvBenefits, wB.pvBenefits, 1e-9);
+    const wM0 = TBCR.lifecycleCorePipeline({ ...p, mohring_coef:0   }, umOnly);
+    const wM1 = TBCR.lifecycleCorePipeline({ ...p, mohring_coef:0.2 }, umOnly);
+    T.ok('E1 mohring marks up um (raises benefit)', wM1.pvBenefits > wM0.pvBenefits);
+    T.eq('E1 mohring is (1+coef) on the ASC-incl time stream', wM1.pvBenefits, wM0.pvBenefits*1.2, 1e-9);
+    const um0Only = { umInfraMin:0, um0InfraMin:1000 };
+    const wG0 = TBCR.lifecycleCorePipeline({ ...p, gamma:0   }, um0Only);
+    const wG1 = TBCR.lifecycleCorePipeline({ ...p, gamma:0.5 }, um0Only);
+    T.ok('E1 gamma marks up um0', wG1.pvBenefits > wG0.pvBenefits && wG0.pvBenefits === 0);
+    const wMon0 = TBCR.lifecycleCorePipeline({ ...p, gamma:0.5, mohring_coef:0   }, um0Only);
+    const wMon1 = TBCR.lifecycleCorePipeline({ ...p, gamma:0.5, mohring_coef:0.9 }, um0Only);
+    T.ok('E1 mohring does not touch um0 (equal & positive)', Math.abs(wMon0.pvBenefits-wMon1.pvBenefits)<1e-9 && wMon0.pvBenefits>0);
+  }
+  // E1/D6: margin-only ramp — early-year benefits >= the all-ramped variant; mature years coincide
+  {
+    const p = { ...pipeBase, ramp_start:0.6, ramp_years:5 };
+    const wM = TBCR.lifecycleCorePipeline(p, { umInfraMin:500, umMarginMin:500 });
+    const wA = TBCR.lifecycleCorePipeline(p, { umInfraMin:0,   umMarginMin:1000 });
+    T.ok('E1/D6 margin-only ramp: early benefit >= all-ramped variant', wM.byYear[0].benefit >= wA.byYear[0].benefit);
+    T.ok('E1/D6 strictly higher early when infra is unramped', wM.byYear[0].benefit > wA.byYear[0].benefit);
+    T.ok('E1/D6 mature years coincide (adopt=1)', Math.abs(wM.byYear[10].benefit - wA.byYear[10].benefit) < 1e-9);
+  }
+  // E1/D3: fare burden enters at weight 1 (never marked up by VOT/mohring/gamma/labor)
+  {
+    const p = pipeBase, sd = sumDisc(p), q = { fareBurdenDay:50, fareReceiptsInfraDay:0 };
+    const w1 = TBCR.lifecycleCorePipeline({ ...p, VOT:22.5, mohring_coef:0.3, gamma:0.4, labor_coef:0.2 }, q);
+    T.eq('E1/D3 fare burden at weight 1 (unmarked)', w1.pvBenefits, -50*300/1e6*sd, 1e-9);
+    const w2 = TBCR.lifecycleCorePipeline({ ...p, VOT:40, mohring_coef:0 }, q);
+    T.eq('E1/D3 fare burden independent of VOT/markups', w2.pvBenefits, w1.pvBenefits, 1e-12);
+  }
+  // E1: interim hard guard — fareBurden!=0 without a fare_receipts stream errors (§3/§12.6)
+  {
+    let threw = false;
+    try { TBCR.lifecycleCorePipeline(pipeBase, { fareBurdenDay:5 }); } catch(e){ threw = /fare_receipts/.test(e.message); }
+    T.ok('E1 guard: fareBurden!=0 without receipts throws', threw);
+    let cleared = true;
+    try { TBCR.lifecycleCorePipeline(pipeBase, { fareBurdenDay:5, fareReceiptsMarginDay:3 }); } catch(e){ cleared = false; }
+    T.ok('E1 guard clears once receipts supplied', cleared);
+  }
+  // E1/D8: avoided-car externalities — two DISTINCT /1e6 (g->t, $->$M); rebound on congestion only
+  {
+    const p = { ...pipeBase, c_cong:0, c_acc:0, c_emis_local:0, rebound:0, scc:50, gco2_per_mi:350 }, sd = sumDisc(p);
+    const w = TBCR.lifecycleCorePipeline(p, { carMilesDay:100 });
+    T.eq('E1 avoided-car carbon: grams->tonnes /1e6 kept separate from $->$M /1e6', w.pvBenefits, 100*((350/1e6)*50)*300/1e6*sd, 1e-9);
+    const p2 = { ...pipeBase, c_cong:0.20, c_acc:0.03, c_emis_local:0.008, rebound:0.5, scc:0 }, sd2 = sumDisc(p2);
+    const w2 = TBCR.lifecycleCorePipeline(p2, { carMilesDay:100 });
+    const perMi = 0.20*(1-0.5) + 0.03 + 0.008;
+    T.eq('E1 rebound applies to congestion only', w2.pvBenefits, 100*perMi*300/1e6*sd2, 1e-9);
+  }
+  // E1/D8: traction carbon is a benefit-side NEGATIVE externality — annual (not eq_days-scaled), not ramped
+  {
+    const p = { ...pipeBase, car_km_yr:1e6, traction_gco2_per_km:40, scc:50 }, sd = sumDisc(p);
+    const w = TBCR.lifecycleCorePipeline(p, {});
+    T.eq('E1/D8 traction debits benefit side (annual, not eq_days-scaled)', w.pvBenefits, -2000/1e6*sd, 1e-9);
+    const wScc0 = TBCR.lifecycleCorePipeline({ ...p, scc:0 }, {});
+    T.ok('E1 traction scales with SCC (zero at SCC 0)', Math.abs(wScc0.pvBenefits) < 1e-12);
+    const wRamp = TBCR.lifecycleCorePipeline({ ...p, ramp_start:0.6 }, {});
+    T.ok('E1/D8 traction not ridership-ramped', Math.abs(wRamp.byYear[0].benefit - wRamp.byYear[10].benefit) < 1e-12);
+  }
+  // E1/D4: loadFlag = R0*peak_hour_share*pk_dir/seatCap (year-indexed; binds in the growth year)
+  {
+    const p = { ...pipeBase, peak_hour_share:0.17, peak_direction_share:0.60, seatCap:2000 };
+    const w = TBCR.lifecycleCorePipeline(p, { R0:6000 });
+    T.eq('E1/D4 loadFlag = R0*peak_hour_share*pk_dir/seatCap', w.loadFlag, 6000*0.17*0.60/2000, 1e-9);
+    const wNo = TBCR.lifecycleCorePipeline({ ...p, seatCap:undefined }, { R0:6000 });
+    T.ok('E1 loadFlag null when seatCap absent', wNo.loadFlag === null);
+    const wG = TBCR.lifecycleCorePipeline({ ...p, growth:0.01, build_years:5 }, { R0:6000 });
+    T.ok('E1 loadFlag binds in the last (growth) year', wG.loadFlag > 6000*0.17*0.60/2000);
+  }
+  // E1: determinism/purity — identical inputs, identical outputs
+  {
+    const p = { ...pipeBase, K:1.5, build_years:5 }, q = { umInfraMin:200000, carMilesDay:5000, R0:6000 };
+    const a = TBCR.lifecycleCorePipeline(p, q), b = TBCR.lifecycleCorePipeline(p, q);
+    T.ok('E1 pipeline core is deterministic/pure', a.npv === b.npv && a.bcrPV === b.bcrPV && a.pvBenefits === b.pvBenefits);
+  }
+  // E3: capexSchedulePipeline — build_years spread + in-service renewals + life>=5 guard
+  {
+    T.ok('E3 capexSchedulePipeline exists', typeof TBCR.capexSchedulePipeline === 'function');
+    const base = { K:1.5, horizon:60, assets:[{share:0.55,life:80},{share:0.25,life:30},{share:0.15,life:30},{share:0.05,life:12}] };
+    const v2 = TBCR.capexSchedule(base);
+    const p0 = TBCR.capexSchedulePipeline({ ...base, build_years:0 });
+    T.ok('E3 build_years=0 == endogenous capexSchedule (residual)', Math.abs(p0.residual - v2.residual) < 1e-9);
+    T.ok('E3 build_years=0 == endogenous capexSchedule (capex array)', p0.capex.every((v,i)=>Math.abs(v - v2.capex[i]) < 1e-9));
+    const p5 = TBCR.capexSchedulePipeline({ ...base, build_years:5 });
+    T.eq('E3 initial build spread over construction years (0..4)', p5.capex[0], 1500/5, 1e-6);
+    T.eq('E3 spread is even across construction years', p5.capex[4], p5.capex[0], 1e-9);
+    T.ok('E3 no outlay at opening year unless a renewal lands there', p5.capex[5] === 0);
+    T.ok('E3 renewal from in-service date (IT life-12 renews at B+12=17)', p5.capex[17] > 0);
+    T.ok('E3 no build exactly at horizon', p5.capex[60] === 0);
+    T.ok('E3 residual positive', p5.residual > 0);
+    const longer = TBCR.capexSchedulePipeline({ ...base, build_years:5, assets:[{share:0.55,life:120},{share:0.25,life:30},{share:0.15,life:30},{share:0.05,life:12}] });
+    T.ok('E3 longer civil life raises residual', longer.residual > p5.residual);
+    const guarded = TBCR.capexSchedulePipeline({ K:1.5, horizon:60, build_years:5, assets:[{share:1,life:0},{share:0,life:30},{share:0,life:30},{share:0,life:12}] });
+    T.ok('E3 life<=0 guarded (no hang, finite residual)', isFinite(guarded.residual));
+  }
+  // E2: new pipeline knobs survive parseState (would be stripped as unknown before the add) and clamp
+  {
+    const P = PRESETS.us_lrt;
+    const cases = [
+      ['eq_days',320,320],['eq_days',500,366],['eq_days',100,200],
+      ['scc',60,60],['scc',1000,300],['scc',-5,0],
+      ['c_cong',0.10,0.10],['c_cong',0.5,0.25],
+      ['c_acc',0.02,0.02],['c_acc',0.5,0.05],
+      ['c_emis_local',0.008,0.008],['c_emis_local',0.5,0.010],
+      ['gco2_per_mi',300,300],['gco2_per_mi',9999,400],
+      ['rebound',0.4,0.4],['rebound',5,0.8],
+      ['traction_gco2_per_km',20,20],['traction_gco2_per_km',200,60],
+      ['build_years',5,5],['build_years',20,10],['build_years',1,3],
+      ['avoidable_rate',120,120],['avoidable_rate',9999,200],
+      ['om_var_per_car_km',6,6],['om_var_per_car_km',99,12],
+      ['om_fixed_yr',5e6,5e6],['om_fixed_yr',-5,0],
+    ];
+    let allOk = true, detail = '';
+    for (const [k,vin,want] of cases) {
+      const r = TBCR_IO.parseState({ version:2, params:{ ...P.params, [k]:vin }, referencePoint:P.ref });
+      const got = (k in r.params) ? r.params[k] : NaN;
+      if (Math.abs(got - want) > 1e-9) { allOk = false; detail = `${k}:${vin}->${got} want ${want}`; }
+    }
+    T.ok('E2 new pipeline RANGES survive parse + clamp'+(allOk?'':' ['+detail+']'), allOk);
+  }
+  // E2/G-E3: mohring/labor floor 0 — explicit zeros survive parse (guards V2_DEFAULTS backfill)
+  {
+    const P = PRESETS.us_lrt;
+    const zp = TBCR_IO.parseState({ version:2, params:{ ...P.params, mohring_coef:0, labor_coef:0 }, referencePoint:P.ref });
+    T.eq('E2/G-E3 explicit mohring_coef:0 survives parse (floor -> 0)', zp.params.mohring_coef, 0, 1e-12);
+    T.eq('E2/G-E3 explicit labor_coef:0 survives parse', zp.params.labor_coef, 0, 1e-12);
+    const missing = { ...P.params }; delete missing.mohring_coef; delete missing.labor_coef;
+    const mp = TBCR_IO.parseState({ version:2, params:missing, referencePoint:P.ref });
+    T.eq('E2 V2_DEFAULTS backfills 0.18 when mohring omitted (why explicit 0 is required)', mp.params.mohring_coef, 0.18, 1e-9);
   }
   // ---- END TESTS ----
   globalThis.__TESTS_PASSED = passed; globalThis.__TESTS_FAILED = failed;
