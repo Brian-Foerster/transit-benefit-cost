@@ -12,23 +12,23 @@
     "stations": 13,
     "_stations_note": "1.0-mi spacing over 12.1 mi → 13 stations (12 intervals + endpoints).",
     "cars_per_train": 2,
-    "fleet_cars": 27,
-    "_fleet_note": "spec 04 §3.1 illustrative Harbor fleet: 12 trainsets × 2 cars × 1.12 spare ≈ 27 cars (cycle_time = 2·19.47/47·1.15 ≈ 57 min; ceil(57/5) = 12 trainsets at 5-min peak)."
+    "fleet_cars": 25,
+    "_fleet_note": "spec 04 §3.1 illustrative Harbor fleet: 11 trainsets × 2 cars × 1.12 spare ≈ 25 cars (cycle_time = 2·19.47/51.2·1.15 ≈ 52.5 min; ceil(52.5/5) = 11 trainsets at 5-min peak). Owner 2026-07-17 60-mph design decision raised the derived average speed 47→51.2 km/h (oc v_cruise central 80→96.6 km/h), trimming the fleet 27→25 (oc scripts/capcost.py fleet(); oc test_capcost gate; oc results_harbor.json sweep_fleet[5]=25)."
   },
 
   "capital": {
     "_derivation": "spec 04 §2 linear MECE rate card (2026 US$M): Total = markup × [Fixed + per-km·route_km + per-stn·stations + per-car·cars + special_structures]. LOW = sheet's efficient-agency rates, markup ADDITIVE 1 + 0.10 + 0.10 = 1.20 (N2 review 2026-07-15: xlsx-formula-level confirmation that the sheet's own markup cell composes design% and contingency% additively — E55 = E51×(1+0.10+0.10) = 1654.2×1.20 = 1985.04 exactly on the sheet's own line items; corrects this profile's prior 1.10×1.10 = 1.21 multiplicative misread). US-TYPICAL = soft 17% × contingency 19% = 1.3923 multiplicative, with a 1.75× delivery-environment factor on viaduct+stations (§3.2) and the §3.3b dense-segment utilities/street rates. Both K in $B (engine params.K units: cost_$M = K·share·1000).",
     "low": {
-      "K": 2.033,
-      "total_musd": 2033,
-      "usd_per_km": 104.4,
-      "_breakdown": "per-km civil (viaduct 23 + track 4 + traction 8.5 + CBTC 4 + utilities 3 + street-restoration 3 = 45.5)×19.47 = 885.9; stations 28.3×13 = 367.9; fixed (OCC 28 + depot 125) = 153; cars 6.2×27 = 167.4; special structures 4×30 = 120; subtotal 1694.2 × 1.20 (additive 1+0.10+0.10, E55-anchored, N2 review 2026-07-15 — was × 1.21 multiplicative) = 2033.04, rounded 2033. $/km 104.4 sits inside the sheet's 100-125 $M/km sanity band (§2)."
+      "K": 2.018,
+      "total_musd": 2018,
+      "usd_per_km": 103.6,
+      "_breakdown": "per-km civil (viaduct 23 + track 4 + traction 8.5 + CBTC 4 + utilities 3 + street-restoration 3 = 45.5)×19.47 = 885.9; stations 28.3×13 = 367.9; fixed (OCC 28 + depot 125) = 153; cars 6.2×25 = 155.0 (owner 2026-07-17 60-mph design trims the fleet 27→25); special structures 4×30 = 120; subtotal 1681.8 × 1.20 (additive 1+0.10+0.10, E55-anchored, N2 review 2026-07-15 — was × 1.21 multiplicative) = 2018.16, rounded 2018. $/km 103.6 sits inside the sheet's 100-125 $M/km sanity band (§2)."
     },
     "us_typical": {
-      "K": 3.62,
-      "total_musd": 3622,
-      "usd_per_km": 186.0,
-      "_breakdown": "per-km (viaduct 23×1.75 + track 4 + traction 8.5 + CBTC 4 + utilities 8 + street 6 = 70.75)×19.47 = 1377.5; stations 28.3×1.75×13 = 643.8; fixed 153; cars 167.4; special structures 4×65 = 260; subtotal 2601.7 × 1.3923 = 3622. $/km 186 is an efficient-US-typical elevated (Transit Costs Project US-elevated comps run higher; §3.2 cross-check row).",
+      "K": 3.605,
+      "total_musd": 3605,
+      "usd_per_km": 185.1,
+      "_breakdown": "per-km (viaduct 23×1.75 + track 4 + traction 8.5 + CBTC 4 + utilities 8 + street 6 = 70.75)×19.47 = 1377.5; stations 28.3×1.75×13 = 643.8; fixed 153; cars 155.0 (owner 2026-07-17 60-mph design trims the fleet 27→25); special structures 4×65 = 260; subtotal 2589.3 × 1.3923 = 3605. $/km 185.1 is an efficient-US-typical elevated (Transit Costs Project US-elevated comps run higher; §3.2 cross-check row).",
       "_provenance_note": "composition not gate-locked; additive-consistent alternative 1.36 (~2.4% lower) — convention choice documented, N2 review 2026-07-15. Kept at the committed 1.3923 multiplicative pending a US-TYPICAL-side xlsx anchor equivalent to LOW's E55."
     }
   },
