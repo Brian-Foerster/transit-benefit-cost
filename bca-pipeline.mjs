@@ -116,7 +116,10 @@ export function extractCoeffs(TBCR, params) {
 }
 // Reconstruct per-draw NPV & BCR into caller-supplied arrays (exact vs a direct
 // lifecycleCorePipeline call — see tests). streams: {stream: Float64Array}.
-export function reconstruct(C, streams, n, outNpv, outBcr) {
+// outBen (optional) receives the per-draw pvBenefits — the sequencing harness's
+// networked mode reads it back for the σ_struct benefit-per-boarding ratio
+// (spec 07 N5); pre-existing 5-arg callers are unaffected.
+export function reconstruct(C, streams, n, outNpv, outBcr, outBen) {
   const a = STREAMS.map((s) => C.A[s]);
   const arr = STREAMS.map((s) => streams[s]);
   for (let i = 0; i < n; i++) {
@@ -126,6 +129,7 @@ export function reconstruct(C, streams, n, outNpv, outBcr) {
     const pvNetCost = subsidyPV * C.lambda;
     outNpv[i] = ben - pvNetCost;
     outBcr[i] = pvNetCost !== 0 ? ben / pvNetCost : Infinity;
+    if (outBen) outBen[i] = ben;
   }
 }
 
@@ -434,6 +438,27 @@ function computeTornado({ TBCR }, profile, exp, scenario, central, centralCoeffs
   return { cell: { scenario, band: 'US_TYPICAL', weighting: 'abc', kernel: profile.central_kernel }, central_npv_p50: centralP50, rows, blocked: BLOCKED };
 }
 
+// NETWORKED MODE (spec 07 N5): a harness-built candidate-given-network export
+// carries a `cost_design` block (the harness OWNS capital via capcost.py /
+// spec 04 — the wrapper prices it, spec 06 §2 division of labor) and a
+// `network_fingerprint`. When present, cost_design OVERRIDES the static cost-
+// profile capital + corridor service design so the SAME shared central profile
+// (prices / posterior — county-common, spec 07 §6.1) prices any candidate. A
+// standalone export (no cost_design) leaves the profile untouched, so the
+// committed standalone bca_<corridor>.json is byte-identical (item 2 scope).
+function applyCostDesign(profile, exp) {
+  const cd = exp.cost_design;
+  if (!cd) return profile;
+  const p = JSON.parse(JSON.stringify(profile));            // deep clone; never mutate the file object
+  if (cd.capital) {                                         // capcost $M -> engine K ($B): cost_$M = K·share·1000
+    p.capital = { low: { K: cd.capital.LOW / 1000 }, us_typical: { K: cd.capital.US_TYPICAL / 1000 } };
+  }
+  if (cd.service_plan) p.service_plan = cd.service_plan;    // car_km design (E5)
+  if (cd.base_boardings != null) p.base_boardings = cd.base_boardings; // net-new revenue base (D3)
+  if (cd.seat_capacity) p.seat_capacity = cd.seat_capacity; // loadFlag denominator (D4)
+  return p;
+}
+
 // =============================================================================
 // MAIN PIPELINE
 // =============================================================================
@@ -445,7 +470,7 @@ export function runPipeline(opts = {}) {
   const profilePath = opts.profilePath || join(HERE, 'costs', 'profiles', `${corridor}.json`);
 
   const exp = JSON.parse(gunzipSync(readFileSync(exportPath)).toString('utf8'));
-  const profile = JSON.parse(readFileSync(profilePath, 'utf8'));
+  const profile = applyCostDesign(JSON.parse(readFileSync(profilePath, 'utf8')), exp);
 
   const n = exp.n;
   // eq_days + kernel labels come from the EXPORT (G-E5); central designation from profile.
@@ -470,10 +495,15 @@ export function runPipeline(opts = {}) {
   }
 
   // ---- central pass: headline + full cross --------------------------------
-  const headline = {}, cross = [];
+  // perDraw[scen][band] = {npv, bcr, ben} Float64Arrays at λ=1 (the central
+  // profile) — the networked sequencing harness reads these back for its
+  // WITHIN-DRAW CV and σ_struct (spec 07 N5). Captured here for free from the
+  // λ=1 reconstruct the headline already runs.
+  const headline = {}, cross = [], perDraw = {};
   const centralParamsCache = {}, centralCoeffsCache = {};
   for (const scen of scenarios) {
     headline[scen] = {};
+    perDraw[scen] = {};
     for (const [bandName, K] of bands) {
       const central = buildCentralParams(engine, profile, exp, scen, eqDaysCentral, K);
       centralParamsCache[scen + '|' + bandName] = central;
@@ -482,14 +512,18 @@ export function runPipeline(opts = {}) {
       for (const lam of [1.0, 1.3]) {
         const C = extractCoeffs(TBCR, { ...central, lambda: lam });
         const npv = new Float64Array(n), bcr = new Float64Array(n);
-        reconstruct(C, streams, n, npv, bcr);
+        const ben = lam === 1.0 ? new Float64Array(n) : undefined;
+        reconstruct(C, streams, n, npv, bcr, ben);
         const uncapped = summarize(npv, bcr, n, null);
         const abc = hasAbc ? summarize(npv, bcr, n, exp.abc_weights[centralKernel]) : null;
         for (const [wname, stat] of [['uncapped', uncapped], ['abc', abc]]) {
           if (!stat) continue;
           cross.push({ scenario: scen, band: bandName, weighting: wname, lambda: lam, npv: stat.npv, bcr: stat.bcr, p_npv_pos: stat.p_npv_pos, ess: stat.ess });
         }
-        if (lam === 1.0) headline[scen][bandName] = { uncapped, ...(abc ? { abc } : {}) };
+        if (lam === 1.0) {
+          headline[scen][bandName] = { uncapped, ...(abc ? { abc } : {}) };
+          perDraw[scen][bandName] = { npv, bcr, ben };
+        }
       }
     }
     // cache central (λ=1) coeffs for tornado at US_TYPICAL
@@ -523,6 +557,15 @@ export function runPipeline(opts = {}) {
   }
 
   // ---- assemble artifact --------------------------------------------------
+  // spec 07 N5: networked ONLY when the export carries cost_design (a harness-
+  // built candidate-given-network point). The two network keys are added
+  // CONDITIONALLY (spread below), so a standalone export yields the byte-
+  // identical committed bca_<corridor>.json — item 2's identity test is scoped
+  // to exactly that standalone case.
+  const networked = !!exp.cost_design;
+  const networkKeys = networked
+    ? { network_fingerprint: exp.network_fingerprint || null, networked: true }
+    : {};
   const artifact = {
     schema_version: 'bca-pipeline-1',
     corridor,
@@ -530,6 +573,7 @@ export function runPipeline(opts = {}) {
     engine_fn: 'TBCR.lifecycleCorePipeline',
     n_draws: n,
     export_seed: exp.seed,
+    ...networkKeys,
     eq_days: { band: eqDaysBand, central: eqDaysCentral, source: 'export' },
     central_kernel: centralKernel,
     central_kernel_source: 'cost-profile (interim; oc 08-A3.3 central flag pending)',
@@ -570,7 +614,40 @@ export function runPipeline(opts = {}) {
       'traction_gco2_per_km is clamped by the engine RANGES [0,60]; the physical SCE-grid rate is higher but the term is immaterial to the headline (see profile note + T3 report).',
     ],
   };
-  return { artifact, engine, profile, exp, n, scenarios, bands, eqDaysCentral, centralKernel, hasAbc };
+  return { artifact, engine, profile, exp, n, scenarios, bands, eqDaysCentral, centralKernel, hasAbc, perDraw };
+}
+
+// ---- per-draw NPV emission (spec 07 N5 networked mode) ----------------------
+// The sequencing harness's within-draw CV needs per-draw ΔNPV, not just the
+// summary bands. The linear decomposition already produced them for free at the
+// λ=1 headline pass (perDraw), so emit them as a compact companion file the
+// harness reads back — the documented mechanism for "reading 40k per-draw NPVs
+// back from node." Per (scenario, band): the full per-draw NPV array at the
+// central profile (λ=1) plus the ben/npv/bcr P50 scalars the harness reuses for
+// σ_struct (benefit-per-boarding) and the §7 marginal-BCR stopping test.
+export function perDrawArtifact(corridor, exp, perDraw, n) {
+  const out = {
+    schema: 'bca-per-draw-npv-1',
+    corridor,
+    network_fingerprint: exp.network_fingerprint || null,
+    n, lambda: 1.0,
+    note: 'per-draw ΔNPV at the central profile (λ=1), λ-1 headline pass of bca-pipeline.mjs; scenarios×bands. npv is the full (n,) array; *_p50 are conveniences (spec 07 N5).',
+    scenarios: {},
+  };
+  for (const scen of Object.keys(perDraw).sort()) {
+    out.scenarios[scen] = {};
+    for (const band of Object.keys(perDraw[scen]).sort()) {
+      const { npv, bcr, ben } = perDraw[scen][band];
+      const sN = Float64Array.from(npv).sort(), sBen = Float64Array.from(ben).sort(), sBcr = Float64Array.from(bcr).sort();
+      out.scenarios[scen][band] = {
+        npv: Array.from(npv),
+        npv_p50: pctLinear(sN, 50),
+        ben_p50: pctLinear(sBen, 50),
+        bcr_p50: pctLinear(sBcr, 50),
+      };
+    }
+  }
+  return out;
 }
 
 // ---- deterministic serialization (spec §9 / G-E6) ---------------------------
@@ -628,19 +705,54 @@ function printHeadline(artifact) {
 }
 
 // ---- CLI --------------------------------------------------------------------
+// Standalone:  node bca-pipeline.mjs [corridor] [exportPath]
+//                -> outputs/bca_<corridor>.json (committed; item 2 identity test)
+// Networked:   node bca-pipeline.mjs <corridor> --export <gz> [--profile <json>]
+//                [--out <json>] [--npv-out <json>]
+//                -> a FINGERPRINT-NAMED output (outputs/bca_<corridor>_<fp12>.json
+//                   by default, from the export's network_fingerprint) + a
+//                   companion per-draw NPV file (bca_<corridor>_<fp12>.npv.json
+//                   by default) the sequencing harness reads back (spec 07 N5).
+function parseArgs(argv) {
+  const o = { positional: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--export') o.exportPath = argv[++i];
+    else if (a === '--profile') o.profilePath = argv[++i];
+    else if (a === '--out') o.outPath = argv[++i];
+    else if (a === '--npv-out') o.npvOutPath = argv[++i];
+    else o.positional.push(a);
+  }
+  return o;
+}
 function main(argv) {
-  const corridor = argv[0] || 'harbor';
-  const exportPath = argv[1];
+  const a = parseArgs(argv);
+  const corridor = a.positional[0] || 'harbor';
+  // back-compat: a bare second positional is still the export path (old form)
+  const exportPath = a.exportPath || a.positional[1];
   const t0 = process.hrtime.bigint();
-  const { artifact, n, scenarios } = runPipeline({ corridor, exportPath });
+  const { artifact, n, scenarios, perDraw } = runPipeline({ corridor, exportPath, profilePath: a.profilePath });
   const t1 = process.hrtime.bigint();
   const runtimeMs = Number(t1 - t0) / 1e6;
   const outDir = join(HERE, 'outputs');
   mkdirSync(outDir, { recursive: true });
-  const outPath = join(outDir, `bca_${corridor}.json`);
+
+  // networked runs emit to a fingerprint-named file so distinct candidate/cycle
+  // points never collide; the standalone path keeps the committed name.
+  const fp = artifact.network_fingerprint ? String(artifact.network_fingerprint).slice(0, 12) : null;
+  const outPath = a.outPath || join(outDir, fp ? `bca_${corridor}_${fp}.json` : `bca_${corridor}.json`);
   writeFileSync(outPath, stableStringify(artifact) + '\n');
+
+  let npvMsg = '';
+  if (artifact.networked || a.npvOutPath) {
+    const npvOutPath = a.npvOutPath || join(outDir, `bca_${corridor}_${fp || 'standalone'}.npv.json`);
+    // full-precision, compact JSON (ephemeral, gitignored, harness-read) — the
+    // canonical sig6 serializer is for committed artifacts, not the per-draw pipe.
+    writeFileSync(npvOutPath, JSON.stringify(perDrawArtifact(corridor, { network_fingerprint: artifact.network_fingerprint }, perDraw, n)));
+    npvMsg = '\nwrote ' + npvOutPath + ' (per-draw ΔNPV, spec 07 N5)';
+  }
   printHeadline(artifact);
-  console.log('\nwrote ' + outPath);
+  console.log('\nwrote ' + outPath + npvMsg);
   console.log('runtime: ' + runtimeMs.toFixed(0) + ' ms (n=' + n + ', ' + scenarios.length + ' scenarios × 2 bands; exact linear-decomposition kernel).');
 }
 

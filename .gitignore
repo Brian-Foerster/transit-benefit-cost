@@ -2,3 +2,8 @@
 .superpowers/
 # Local editor/preview config
 .claude/
+# spec 07 N5 networked-mode wrapper outputs: fingerprint-named per-candidate BCA
+# + per-draw ΔNPV companions -- regenerable by the sequencing harness, never
+# committed. The committed standalone artifact bca_<corridor>.json (no fp) stays.
+outputs/bca_*_*.json
+outputs/*.npv.json

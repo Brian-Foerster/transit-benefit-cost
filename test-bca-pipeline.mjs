@@ -12,13 +12,14 @@
 //         ABC-weighted headline BCR P50 must be stable (<=2% drift) across the export's
 //         RNG seed, for all four {fold,retain}x{LOW,US_TYPICAL} ABC cells.
 
-import { readFileSync, existsSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   loadEngine, runPipeline, buildCell, extractCoeffs, reconstruct,
-  wpctInterp, argsort, ess, stableStringify,
+  wpctInterp, argsort, ess, stableStringify, perDrawArtifact,
   TORNADO_ROW_IDS, KNOB_COVERAGE, S4_KNOBS,
 } from './bca-pipeline.mjs';
 
@@ -173,6 +174,64 @@ if (existsSync(join(HERE, 'outputs', 'bca_harbor.json'))) {
   const wM = TBCR.lifecycleCorePipeline({ ...params, ramp_start: 0.6 }, qMargin);
   const wA = TBCR.lifecycleCorePipeline({ ...params, ramp_start: 0.6 }, qAll);
   ok('(D6) margin-only ramp: opening-year benefit >= all-ramped variant', wM.byYear[params.build_years].benefit >= wA.byYear[params.build_years].benefit - 1e-9);
+}
+
+// ---- spec 07 N5: NETWORKED MODE ---------------------------------------------
+// A harness-built candidate-given-network export carries cost_design (capital +
+// service override) + network_fingerprint. The wrapper must: (a) override the
+// static profile capital with cost_design's, (b) mark the artifact networked +
+// carry the fingerprint, (c) return per-draw ΔNPV (perDraw) the harness reads
+// back. The committed-artifact identity test (ii/G-E6 above) stays scoped to the
+// STANDALONE harbor artifact (no cost_design) — verified there.
+{
+  // build a networked export from the real standalone harbor export
+  const fp = 'deadbeefcafe0123456789ab';
+  const capOverride = { LOW: 1804.2, US_TYPICAL: 2945.2 };  // capcost bands ($M), != profile 2018/3605
+  const netExp = {
+    ...exp,
+    network_fingerprint: fp,
+    cost_design: {
+      capital: capOverride,
+      service_plan: { route_km: 19.47, cars_per_train: 2, periods: [
+        { period: 'peak', headway: 5.0, hours: 6.0 },
+        { period: 'offpeak', headway: 10.0, hours: 13.0 }] },
+      base_boardings: 8650,
+      seat_capacity: { seatCap: 3600 },
+    },
+  };
+  const gz = join(tmpdir(), `bca_export_harbor_${fp.slice(0, 12)}.json.gz`);
+  writeFileSync(gz, gzipSync(Buffer.from(JSON.stringify(netExp), 'utf8')));
+  const { artifact: netArt, perDraw } = runPipeline({ corridor: 'harbor', engine, exportPath: gz });
+
+  ok('(N5) networked artifact carries network_fingerprint + networked=true',
+    netArt.network_fingerprint === fp && netArt.networked === true);
+  ok('(N5) standalone artifact has NO network keys (byte-identity scope preserved)',
+    artifact.network_fingerprint === undefined && artifact.networked === undefined);
+  ok('(N5) cost_design capital OVERRODE profile K (US_TYPICAL = 2945.2/1000 B)',
+    Math.abs(netArt.central_profile.K_us_typical - capOverride.US_TYPICAL / 1000) < 1e-9 &&
+    Math.abs(artifact.central_profile.K_us_typical - profile.capital.us_typical.K) < 1e-9 &&
+    netArt.central_profile.K_us_typical !== artifact.central_profile.K_us_typical);
+  ok('(N5) per-draw ΔNPV returned for both scenarios × both bands (n arrays)', (() => {
+    for (const s of ['fold', 'retain']) for (const b of ['LOW', 'US_TYPICAL']) {
+      const pd = perDraw[s] && perDraw[s][b];
+      if (!(pd && pd.npv.length === n && pd.ben.length === n)) return false;
+    }
+    return true;
+  })());
+  const pda = perDrawArtifact('harbor', netExp, perDraw, n);
+  ok('(N5) perDrawArtifact schema: fp + n + scenarios×bands npv arrays + p50 scalars', (() => {
+    if (pda.schema !== 'bca-per-draw-npv-1' || pda.network_fingerprint !== fp || pda.n !== n) return false;
+    const c = pda.scenarios.fold.US_TYPICAL;
+    return Array.isArray(c.npv) && c.npv.length === n && typeof c.ben_p50 === 'number' &&
+      typeof c.npv_p50 === 'number' && typeof c.bcr_p50 === 'number';
+  })());
+  // cost_design capital lowers |NPV| (less capital => less negative) vs the profile K
+  ok('(N5) lower capcost capital => less-negative NPV than profile K standalone',
+    netArt.headline.fold.US_TYPICAL.abc.npv.p50 > artifact.headline.fold.US_TYPICAL.abc.npv.p50);
+  // networked determinism: a second run byte-identical
+  const r2 = runPipeline({ corridor: 'harbor', engine, exportPath: gz }).artifact;
+  ok('(N5) networked run deterministic (byte-identical)',
+    stableStringify(netArt) === stableStringify(r2));
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
