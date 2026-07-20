@@ -411,7 +411,7 @@
     const lambda = params.lambda ?? 1, eqDays = params.eq_days ?? 300;
     const rampStart = params.ramp_start ?? 0.8, rampYears = params.ramp_years ?? 5;
     const growth = params.growth ?? 0, carbonGrowth = params.carbon_growth ?? 0;
-    const rebound = params.rebound ?? 0, scc = params.scc ?? 50;
+    const rebound = params.rebound ?? 0.4, scc = params.scc ?? 50; // rebound central 0.4 (external review 2026-07-17; Duranton–Turner induced-refill); rows at 0 / 0.8
     const cCong = params.c_cong ?? 0.20, cAcc = params.c_acc ?? 0.03, cEmisLocal = params.c_emis_local ?? 0.0085;
     const gco2PerMi = params.gco2_per_mi ?? 350, tractionGco2 = params.traction_gco2_per_km ?? 0;
     // --- E4/E5 design-point constants (injected onto params by the wrapper, spec §3). The DERIVATIONS

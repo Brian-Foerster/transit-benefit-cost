@@ -234,5 +234,92 @@ if (existsSync(join(HERE, 'outputs', 'bca_harbor.json'))) {
     stableStringify(netArt) === stableStringify(r2));
 }
 
+// ---- FB batch 2026-07-19: vot_behav stream + rebound recenter + vot_wedge ----
+{
+  // (FB-1) schema acceptance: the 15-stream export ships per-draw vot_behav
+  // ($/hr), duplicated verbatim into both scenario blocks (um_roh precedent).
+  for (const s of ['fold', 'retain']) {
+    const v = exp.scenarios[s].vot_behav;
+    ok('(FB-1) ' + s + '.vot_behav is an (n,) finite positive $/hr stream',
+      Array.isArray(v) && v.length === n && v.every((x) => Number.isFinite(x) && x > 0 && x < 100));
+  }
+
+  // (FB-2) rebound recenter: central 0.4 (external review 2026-07-17 +
+  // Duranton–Turner), rows at 0 / 0.8, old rebound_05/rebound_08 ids retired.
+  ok('(FB-2) central rebound = 0.4 (profile + artifact)',
+    profile.central_profile.rebound === 0.4 && artifact.central_profile.rebound === 0.4);
+  ok('(FB-2) row set {rebound_0, rebound_hi}; {rebound_05, rebound_08} retired; knob coverage updated',
+    artifact.tornado_row_ids.includes('rebound_0') && artifact.tornado_row_ids.includes('rebound_hi') &&
+    !artifact.tornado_row_ids.includes('rebound_05') && !artifact.tornado_row_ids.includes('rebound_08') &&
+    KNOB_COVERAGE.rebound.join(',') === 'rebound_0,rebound_hi');
+  ok('(FB-2) rebound rows directional (less refill => higher NPV; more => lower)',
+    ['fold', 'retain'].every((s) =>
+      artifact.tornado[s].rows.rebound_0.delta_npv_p50 > 0 && artifact.tornado[s].rows.rebound_hi.delta_npv_p50 < 0));
+
+  // (FB-3) vot_wedge: row present with bcr_p50; arithmetic verified by the exact
+  // linearity identity — scaling the four minute streams by vot_behav/VOT_social
+  // under central params equals a direct lifecycleCorePipeline call at
+  // VOT = vot_behav (every VOT-priced term — timeUSD, agglom, laborUSD — is
+  // linear in VOT; money streams untouched), draw for draw.
+  ok('(FB-3) vot_wedge in tornado_row_ids and rows, carrying bcr_p50 + note',
+    artifact.tornado_row_ids.includes('vot_wedge') &&
+    ['fold', 'retain'].every((s) => {
+      const r = artifact.tornado[s].rows.vot_wedge;
+      return r && typeof r.bcr_p50 === 'number' && typeof r.npv_p50 === 'number' && /money-metric/.test(r.note);
+    }));
+  {
+    const scen = 'retain', K = profile.capital.us_typical.K;
+    const { raw, streams, params } = buildCell(engine, profile, exp, scen, K, 300);
+    const C = extractCoeffs(TBCR, params);
+    const votSocial = profile.central_profile.VOT;
+    const wS = {
+      umInfraMin: new Float64Array(n), umMarginMin: new Float64Array(n),
+      um0InfraMin: new Float64Array(n), um0MarginMin: new Float64Array(n),
+      carMilesDay: streams.carMilesDay, fareRevDay: streams.fareRevDay,
+    };
+    for (let i = 0; i < n; i++) {
+      const k = raw.vot_behav[i] / votSocial;
+      wS.umInfraMin[i] = streams.umInfraMin[i] * k; wS.umMarginMin[i] = streams.umMarginMin[i] * k;
+      wS.um0InfraMin[i] = streams.um0InfraMin[i] * k; wS.um0MarginMin[i] = streams.um0MarginMin[i] * k;
+    }
+    const npvW = new Float64Array(n), bcrW = new Float64Array(n);
+    reconstruct(C, wS, n, npvW, bcrW);
+    let allMatch = true, maxRel = 0;
+    for (const i of [7, 12345, 39999]) {
+      const q = { umInfraMin: streams.umInfraMin[i], umMarginMin: streams.umMarginMin[i], um0InfraMin: streams.um0InfraMin[i], um0MarginMin: streams.um0MarginMin[i], carMilesDay: streams.carMilesDay[i], fareRevDay: streams.fareRevDay[i], R0: raw.newline[i] };
+      const d = TBCR.lifecycleCorePipeline({ ...params, VOT: raw.vot_behav[i] }, q);
+      const rel = Math.abs(npvW[i] - d.npv) / Math.max(1, Math.abs(d.npv));
+      if (rel > maxRel) maxRel = rel;
+      if (rel > 1e-9 || !near(bcrW[i], d.bcrPV, 1e-9)) allMatch = false;
+    }
+    ok('(FB-3) wedge reconstruct == direct engine call at VOT=vot_behav, per draw (max rel ' + maxRel.toExponential(2) + ')', allMatch);
+    // artifact row = weighted P50 of exactly these arrays (sig6-rounded on write)
+    const w = exp.abc_weights[profile.central_kernel], tot = w.reduce((a, b) => a + b, 0);
+    const p50N = wpctInterp(npvW, w, 50, argsort(npvW), tot);
+    const p50B = wpctInterp(bcrW, w, 50, argsort(bcrW), tot);
+    ok('(FB-3) artifact vot_wedge npv_p50/bcr_p50 match the hand-built wedge streams',
+      near(artifact.tornado[scen].rows.vot_wedge.npv_p50, p50N, 1e-5) &&
+      near(artifact.tornado[scen].rows.vot_wedge.bcr_p50, p50B, 1e-5));
+    // headline is UNCHANGED by the wedge (pricing-rule row, not a central move):
+    // wedge BCR ≈ (vot_behav/VOT_social)·headline — loose band around the mean ratio
+    const ratio = artifact.tornado[scen].rows.vot_wedge.bcr_p50 / artifact.headline[scen].US_TYPICAL.abc.bcr.p50;
+    ok('(FB-3) wedge BCR / headline BCR in the behavioral/social band (got ' + ratio.toFixed(4) + ')', ratio > 0.6 && ratio < 0.85);
+  }
+
+  // (FB-4) backward-compat failure mode: a pre-15-stream export (no vot_behav)
+  // must fail loudly with a clear re-export message, not degrade silently.
+  {
+    const noVb = { ...exp, scenarios: { fold: { ...exp.scenarios.fold }, retain: { ...exp.scenarios.retain } } };
+    delete noVb.scenarios.fold.vot_behav;
+    delete noVb.scenarios.retain.vot_behav;
+    const gz = join(tmpdir(), 'bca_export_harbor_no_vot_behav.json.gz');
+    writeFileSync(gz, gzipSync(Buffer.from(JSON.stringify(noVb), 'utf8')));
+    let threw = false, msg = '';
+    try { runPipeline({ corridor: 'harbor', engine, exportPath: gz }); } catch (e) { threw = true; msg = e.message; }
+    ok('(FB-4) export without vot_behav throws a clear error naming the stream + re-export path',
+      threw && /vot_behav/.test(msg) && /re-export/.test(msg));
+  }
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

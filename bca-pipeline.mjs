@@ -168,6 +168,13 @@ function blendCentral(ws, kappa, n) {
 function rawArrays(scen, params) {
   const N = scen.newline.length;
   const f = (a) => Float64Array.from(a);
+  // FB batch 2026-07-19: the per-draw behavioral-VOT stream ($/hr) is REQUIRED —
+  // the vot_wedge row re-prices the minute streams with it. Old (pre-15-stream)
+  // exports fail loudly here, not silently as a zeroed row.
+  if (!Array.isArray(scen.vot_behav) || scen.vot_behav.length !== N) {
+    throw new Error("export missing per-draw 'vot_behav' stream ($/hr; 15-stream schema, FB batch 2026-07-19) — required by the vot_wedge row; re-export with oc scripts/bca_export.py");
+  }
+  const vot_behav = f(scen.vot_behav);
   const um_infra = f(scen.um_infra), um_margin = f(scen.um_margin);
   const um0_infra = f(scen.um0_infra), um0_margin = f(scen.um0_margin);
   const total = f(scen.total), newline = f(scen.newline);
@@ -180,7 +187,7 @@ function rawArrays(scen, params) {
     carRawCentral[i] = p0[i] * cm[0][i] + p1[i] * cm[1][i] + p2[i] * cm[2][i] + pv[i] * cmv[i];
     carRawFullod[i] = p0[i] * cmf[0][i] + p1[i] * cmf[1][i] + p2[i] * cmf[2][i] + pv[i] * cmv[i];
   }
-  return { N, um_infra, um_margin, um0_infra, um0_margin, total, newline, cm, cmf, cmv, ws, kappa, carRawCentral, carRawFullod };
+  return { N, um_infra, um_margin, um0_infra, um0_margin, total, newline, cm, cmf, cmv, ws, kappa, carRawCentral, carRawFullod, vot_behav };
 }
 // pcar band-endpoint car-miles (pre-blend) for the pcar_lo / pcar_hi rows.
 function carRawPcar(raw, pb, lohi) {
@@ -286,7 +293,9 @@ const PARAM_ROWS = {
   scc_0: { scc: 0 }, scc_190: { scc: 190 },
   carbon_growth_2: { carbon_growth: 0.02 },
   gco2_lo: { gco2_per_mi: 200 }, gco2_hi: { gco2_per_mi: 400 },
-  rebound_05: { rebound: 0.5 }, rebound_08: { rebound: 0.8 },
+  // rebound central 0.4 (external review 2026-07-17 + Duranton–Turner induced-refill
+  // evidence); rows at the band ends: 0 (the old no-refill central) and 0.8.
+  rebound_0: { rebound: 0 }, rebound_hi: { rebound: 0.8 },
   ext_cong_lo: { c_cong: 0.05 }, ext_cong_hi: { c_cong: 0.25 },
   ext_acc_lo: { c_acc: 0.01 }, ext_acc_hi: { c_acc: 0.05 },
   ext_local_lo: { c_emis_local: 0.007 }, ext_local_hi: { c_emis_local: 0.010 },
@@ -309,7 +318,7 @@ const PARAM_ROWS = {
   om_lo: null, om_hi: null,
 };
 const LOADFLAG_ONLY = new Set(['peak_hour_share_lo', 'peak_hour_share_hi']);
-const QUANTITY_ROWS = new Set(['pcar_lo', 'pcar_hi', 'kappa_1', 'nonwork_07', 'transfer_fullod', 'no_asc_cs', 'avg_fare_lo', 'avg_fare_hi', 'crowding_haircut', 'gamma_asc']);
+const QUANTITY_ROWS = new Set(['pcar_lo', 'pcar_hi', 'kappa_1', 'nonwork_07', 'transfer_fullod', 'no_asc_cs', 'avg_fare_lo', 'avg_fare_hi', 'crowding_haircut', 'gamma_asc', 'vot_wedge']);
 // σ-sensitivity ABC row IDs (spec §10); their KERNEL LABELS come from profile.abc_rows (G-E5).
 const WEIGHT_ROW_IDS = ['abc_s350', 'abc_s800'];
 const NOTE_ROWS = {
@@ -329,7 +338,7 @@ export const S4_KNOBS = [
 export const KNOB_COVERAGE = {
   eq_days: ['eq_days_330'], c_cong: ['ext_cong_lo', 'ext_cong_hi'], c_acc: ['ext_acc_lo', 'ext_acc_hi'],
   c_emis_local: ['ext_local_lo', 'ext_local_hi'], gco2_per_mi: ['gco2_lo', 'gco2_hi'], scc: ['scc_0', 'scc_190'],
-  carbon_growth: ['carbon_growth_2'], rebound: ['rebound_05', 'rebound_08'], traction_gco2_per_km: ['traction_0'],
+  carbon_growth: ['carbon_growth_2'], rebound: ['rebound_0', 'rebound_hi'], traction_gco2_per_km: ['traction_0'],
   build_years: ['build_years_4', 'build_years_7'], avoidable_rate: ['avoidable_marginal'],
   om_var_per_car_km: ['om_lo', 'om_hi'], om_fixed_yr: ['om_lo', 'om_hi'],
   peak_hour_share: ['peak_hour_share_lo', 'peak_hour_share_hi'], VOT: ['vot_lo', 'vot_hi'],
@@ -369,6 +378,24 @@ function rowStreams(rowId, raw, profile, ctxBlend) {
         null, { infra: 'um_infra', margin: 'um_margin' });
     case 'avg_fare_lo': return assemble(raw, blendC, raw.carRawCentral, af.lo, bb);
     case 'avg_fare_hi': return assemble(raw, blendC, raw.carRawCentral, af.hi, bb);
+    case 'vot_wedge': {
+      // FB batch 2026-07-19: re-price ALL VOT-priced minute streams at each draw's
+      // exported behavioral VOT (vot_behav, $/hr) instead of the social-VOT draw.
+      // Exact: every VOT-priced term (timeUSD, agglom, laborUSD) is linear in VOT,
+      // so scaling the four minute quantities by vot_behav/VOT_social is identical
+      // to setting VOT = vot_behav draw-by-draw (tested against a direct engine
+      // call). Money streams are NOT re-priced — fareRevDay and the fare_burden /
+      // fare_receipts dollar streams stay money-metric (D3/A4). Headline unchanged;
+      // this row reports NPV/BCR under behavioral VOT (spec 06 D3 two-VOT split).
+      const s = assemble(raw, blendC, raw.carRawCentral, af.central, bb);
+      const votSocial = profile.central_profile.VOT;
+      for (let i = 0; i < raw.N; i++) {
+        const k = raw.vot_behav[i] / votSocial;
+        s.umInfraMin[i] *= k; s.umMarginMin[i] *= k;
+        s.um0InfraMin[i] *= k; s.um0MarginMin[i] *= k;
+      }
+      return s;
+    }
     case 'crowding_haircut': {
       // Wrapper variant (spec §3 "no CS haircut in v1"): haircut the time streams
       // where the peak load factor exceeds seated comfort (1.0). Harbor's load is
@@ -421,6 +448,13 @@ function computeTornado({ TBCR }, profile, exp, scenario, central, centralCoeffs
       v = evalParamRow(params, streams);
     } else v = evalQtyRow(streams);
     rows[id] = { label: id, npv_p50: v, delta_npv_p50: v - centralP50 };
+    if (id === 'vot_wedge') {
+      // the row reports BCR too (its point is the BCR under behavioral VOT); npv/bcr
+      // still hold this row's reconstruct output here.
+      const idxB = argsort(bcr);
+      rows[id].bcr_p50 = wpctInterp(bcr, weights, 50, idxB, total);
+      rows[id].note = 'ALL VOT-priced minute streams re-priced at the draw-level exported behavioral VOT (vot_behav) instead of the social-VOT draw; money streams (fareRevDay, fare_burden/fare_receipts) NOT re-priced — money stays money-metric (D3/A4). Headline unchanged.';
+    }
   }
   const abcRows = profile.abc_rows || {};
   for (const id of WEIGHT_ROW_IDS) {
@@ -610,6 +644,8 @@ export function runPipeline(opts = {}) {
     notes: [
       'fold and retain are reported separately — no blend of any kind (different cost structures; spec 06 §1).',
       'eq_days central = 300 (anchor_from_apc primary); eq_days_330 is the band far edge (export ships (300,330)).',
+      'rebound central = 0.4 (recentered from 0: external review 2026-07-17 + Duranton & Turner induced-refill evidence); rows at 0 (rebound_0) and 0.8 (rebound_hi). Materiality: the car-mile externality slice is ~4% of user benefits.',
+      'vot_wedge re-prices the minute streams at the exported per-draw behavioral VOT instead of the social VOT; it is the wrapper pricing-rule toggle, distinct from the vot_behav_lo/hi band rows (spec 06 D3; oc registry vot_behav provenance).',
       'Every current design is flat-fare: fare_burden ≡ 0, so the D3 money-metric transfer and its fare_receipts counterpart are 0; the A4 carve-out holds vacuously (spec §8).',
       'traction_gco2_per_km is clamped by the engine RANGES [0,60]; the physical SCE-grid rate is higher but the term is immaterial to the headline (see profile note + T3 report).',
     ],

@@ -111,7 +111,7 @@
   },
 
   "central_profile": {
-    "_note": "The named central profile (spec §3, spec 06 presentation principle). λ=1, γ=0, SCC=$50, mohring=0, labor=0 (explicit — NOT left to V2_DEFAULTS 0.18/0.05; G-E3), rebound=0, carbon_growth=0, VOT=$22.50, discount 4% flat, ramp_start 0.8, ramp_years 5, growth 0, horizon 60. eq_days is read from the EXPORT (central = min of its (300,330) band), NOT from here. traction_gco2_per_km / peak shares / build_years / O&M / avoidable_rate / avg_fare are the corridor fields above.",
+    "_note": "The named central profile (spec §3, spec 06 presentation principle). λ=1, γ=0, SCC=$50, mohring=0, labor=0 (explicit — NOT left to V2_DEFAULTS 0.18/0.05; G-E3), rebound=0.4, carbon_growth=0, VOT=$22.50, discount 4% flat, ramp_start 0.8, ramp_years 5, growth 0, horizon 60. eq_days is read from the EXPORT (central = min of its (300,330) band), NOT from here. traction_gco2_per_km / peak shares / build_years / O&M / avoidable_rate / avg_fare are the corridor fields above.",
     "horizon": 60,
     "discount_rate": 0.04,
     "declining_rate": false,
@@ -121,7 +121,8 @@
     "labor_coef": 0,
     "lambda": 1,
     "scc": 50,
-    "rebound": 0,
+    "rebound": 0.4,
+    "_rebound_note": "Central recentered 0 → 0.4 (external review 2026-07-17 + Duranton & Turner induced-refill evidence: freed road capacity is partially re-consumed, so the congestion-relief slice of the avoided-car-mile credit is haircut at central, not only in a row). Sensitivity rows at 0 (rebound_0, the old no-refill central) and 0.8 (rebound_hi). Materiality: the car-mile externality slice is ~4% of user benefits, so the recenter moves the headline only slightly.",
     "carbon_growth": 0,
     "growth": 0,
     "ramp_start": 0.8,

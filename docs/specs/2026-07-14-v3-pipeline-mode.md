@@ -116,7 +116,11 @@ the ws/κ blend are wrapper-side re-pricings per spec 06 §3 division of labor):
 > not per-draw).
 
 **Central profile in bold** (spec 06 presentation principle): **λ=1.0, γ=0, SCC=$50,
-mohring_coef=0, labor_coef=0, rebound=0, carbon_growth=0, traction_gco2_per_km = grid rate
+mohring_coef=0, labor_coef=0, rebound=0.4** (recentered from 0, FB batch 2026-07-19:
+external review 2026-07-17 + Duranton & Turner induced-refill evidence — freed road
+capacity is partially re-consumed, so the congestion slice of the avoided-car-mile
+credit is haircut at central; rows at 0 and 0.8; materiality: the car-mile externality
+slice is ~4% of user benefits)**, carbon_growth=0, traction_gco2_per_km = grid rate
 (corridor cost profile — D8's debit is ON at central; the clean-grid zero is the row),
 VOT=$22.50/hr, discount 4% flat, eq_days=300, ramp_start=0.8, ramp_years=5, growth=0,
 build_years=5, peak_hour_share=0.17**, plus the corridor's LOW **and** US-TYPICAL capital
@@ -492,8 +496,9 @@ turns structural rows into re-pricings).
 | id | row | id | row |
 |---|---|---|---|
 | `vot_lo`/`vot_hi` | VOT $15/$30 | `traction_0` | traction-carbon clean-grid zero (central = grid) |
-| `nonwork_07` | non-work 0.7×VOT (**wrapper re-blend**) | `rebound_05`/`rebound_08` | rebound 0.5/0.8 |
+| `nonwork_07` | non-work 0.7×VOT (**wrapper re-blend**) | `rebound_0`/`rebound_hi` | rebound 0 / 0.8 (central 0.4, FB batch 2026-07-19; ids were `rebound_05`/`rebound_08` when central was 0) |
 | `vot_behav_lo`/`_hi` | behavioral VOT (via export) | `ext_cong_lo`/`_hi` | congestion rate |
+| `vot_wedge` | minute streams re-priced at the exported per-draw behavioral VOT (FB batch 2026-07-19; money streams stay money-metric, D3/A4) | | |
 | `gamma_015`/`gamma_025` | γ 0.15/0.25 (no-ASC base) | `ext_acc_lo`/`_hi` | accident rate |
 | `gamma_asc` | γ on ASC-inclusive CS | `ext_local_lo`/`_hi` | local-pollutant rate |
 | `lambda_13` | λ = 1.3 | `pcar_lo`/`pcar_hi` | pcar set lo/hi |
