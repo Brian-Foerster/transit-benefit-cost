@@ -321,5 +321,101 @@ if (existsSync(join(HERE, 'outputs', 'bca_harbor.json'))) {
   }
 }
 
+// ---- SC batch 2026-07-19: streetcar no-ABC degrade path ---------------------
+// The streetcar export ships NO abc_weights (no calibration target until
+// post-launch, spec 05; spec 06 §1/§7 degrade convention). First real exercise
+// of the wrapper's no-ABC path + the two latent bugs it exposed:
+//   (SC-2) `central_kernel: undefined` reached stableStringify and threw
+//          (Object.keys(undefined)) — no-ABC profiles carry no central_kernel;
+//   (SC-4) a --export run without a corridor positional silently labeled the
+//          artifact 'harbor' — corridor now resolves from the export, and a
+//          contradicting caller corridor is a hard error.
+{
+  const scExportPath = join(HERE, '..', 'oc-transit-forecast', 'outputs', 'bca_export_streetcar.json.gz');
+  const scProfilePath = join(HERE, 'costs', 'profiles', 'streetcar.json');
+  if (existsSync(scExportPath) && existsSync(scProfilePath)) {
+    const scExp = JSON.parse(gunzipSync(readFileSync(scExportPath)).toString('utf8'));
+    const scProfile = JSON.parse(readFileSync(scProfilePath, 'utf8'));
+    // corridor deliberately OMITTED — must resolve from the export (SC-4 fix)
+    const { artifact: sc } = runPipeline({ engine, exportPath: scExportPath, profilePath: scProfilePath });
+
+    // (SC-1) degrade acceptance: uncapped-only, abc cells absent, reason populated
+    // NOTE (R2 review, 2026-07-20): the /post-launch/ reason regex below pins the
+    // STANDALONE no-weights convention. oc spec 06's 2026-07-17 amendment reads the
+    // ABC weights as county-posterior properties applicable to any corridor under
+    // the same draws — if the standalone streetcar export ever adopts that reading
+    // and ships county weights, UPDATE this test; its failure would not be a regression.
+    ok('(SC-1) corridor resolved from export (no caller corridor)', sc.corridor === 'streetcar');
+    ok('(SC-1) abc_absent_reason populated verbatim from the export',
+      typeof sc.abc_absent_reason === 'string' && sc.abc_absent_reason === scExp.abc_weights_absent_reason && /post-launch/.test(sc.abc_absent_reason));
+    ok('(SC-1) headline cells are uncapped-ONLY (no abc key, all four cells)',
+      ['fold', 'retain'].every(s => ['LOW', 'US_TYPICAL'].every(b => {
+        const c = sc.headline[s][b];
+        return c.uncapped && !('abc' in c) && c.uncapped.ess === null && c.uncapped.npv.p10 <= c.uncapped.npv.p50 && c.uncapped.npv.p50 <= c.uncapped.npv.p90;
+      })));
+    ok('(SC-1) cross is the uncapped-only half: 8 rows, no abc weighting',
+      sc.cross.length === 8 && sc.cross.every(c => c.weighting === 'uncapped' && c.ess === null));
+    ok('(SC-1) kernel_labels [] + ess {} + central_kernel/source null',
+      sc.kernel_labels.length === 0 && Object.keys(sc.ess).length === 0 && sc.central_kernel === null && sc.central_kernel_source === null);
+    ok('(SC-1) tornado degrades to the uncapped weighting (cell labeled, kernel null)',
+      ['fold', 'retain'].every(s => {
+        const t = sc.tornado[s];
+        return t && t.cell.weighting === 'uncapped' && t.cell.kernel === null &&
+          t.rows.abc_s350.note === 'kernel unavailable in export' && t.rows.abc_s350.delta_npv_p50 === 0 &&
+          t.rows.abc_s800.note === 'kernel unavailable in export';
+      }));
+    ok('(SC-1) tornado uncapped central P50 == headline uncapped US_TYPICAL P50 (same convention)',
+      ['fold', 'retain'].every(s => near(sc.tornado[s].central_npv_p50, sc.headline[s].US_TYPICAL.uncapped.npv.p50, 1e-6)));
+
+    // (SC-2) serialization survives (the undefined-central_kernel crash) — and
+    // is deterministic across runs
+    let ser1 = null, ser2 = null, serThrew = false;
+    try {
+      ser1 = stableStringify(sc) + '\n';
+      ser2 = stableStringify(runPipeline({ engine, exportPath: scExportPath, profilePath: scProfilePath }).artifact) + '\n';
+    } catch (e) { serThrew = true; }
+    ok('(SC-2) no-ABC artifact serializes (undefined central_kernel crash fixed) + deterministic',
+      !serThrew && ser1 === ser2);
+    if (existsSync(join(HERE, 'outputs', 'bca_streetcar.json'))) {
+      const committed = readFileSync(join(HERE, 'outputs', 'bca_streetcar.json'), 'utf8');
+      ok('(SC-2/G-E6) committed bca_streetcar.json byte-identical to a fresh run', committed === ser1);
+    }
+
+    // (SC-3) profile smoke: capcost-derived honest-subset capital, sane BCR band,
+    // corridor-specific fiscal facts (no fold: baseOMAvoided == 0; loadFlag fires)
+    ok('(SC-3) K bands are the capcost at-grade honest subset (0.754 / 1.220 $B)',
+      near(sc.central_profile.K_low, 0.754, 1e-9) && near(sc.central_profile.K_us_typical, 1.220, 1e-9));
+    ok('(SC-3) BCR P50 in a sane band (positive, << 1, below harbor\'s)', (() => {
+      for (const s of ['fold', 'retain']) for (const b of ['LOW', 'US_TYPICAL']) {
+        const v = sc.headline[s][b].uncapped.bcr.p50;
+        if (!(v > 0.01 && v < 0.5)) return false;
+      }
+      return sc.headline.fold.US_TYPICAL.uncapped.bcr.p50 < artifact.headline.fold.US_TYPICAL.uncapped.bcr.p50;
+    })());
+    ok('(SC-3) NPV strictly negative all cells, p_npv_pos == 0',
+      ['fold', 'retain'].every(s => ['LOW', 'US_TYPICAL'].every(b => {
+        const u = sc.headline[s][b].uncapped; return u.npv.p90 < 0 && u.p_npv_pos === 0;
+      })));
+    ok('(SC-3) no route folded: baseOMAvoidedYr == 0 both scenarios; avoidable_marginal row inert',
+      sc.service.baseOMAvoidedYr.fold === 0 && sc.service.baseOMAvoidedYr.retain === 0 &&
+      ['fold', 'retain'].every(s => Math.abs(sc.tornado[s].rows.avoidable_marginal.delta_npv_p50) < 1e-9));
+    ok('(SC-3) single-car 10-min streetcar: loadFlag fires and crowding_haircut actually bites (harbor: ≈0)',
+      ['fold', 'retain'].every(s => sc.load_flag[s].fires === true) &&
+      ['fold', 'retain'].every(s => sc.tornado[s].rows.crowding_haircut.delta_npv_p50 < 0) &&
+      ['fold', 'retain'].every(s => artifact.tornado[s].rows.crowding_haircut.delta_npv_p50 === 0));
+
+    // (SC-4) corridor-mismatch guard: a contradicting caller corridor throws
+    {
+      let threw = false, msg = '';
+      try { runPipeline({ corridor: 'harbor', engine, exportPath: scExportPath, profilePath: scProfilePath }); }
+      catch (e) { threw = true; msg = e.message; }
+      ok('(SC-4) corridor mismatch (caller harbor vs export streetcar) throws loudly',
+        threw && /corridor mismatch/.test(msg) && /streetcar/.test(msg));
+    }
+  } else {
+    ok('(SC) streetcar export/profile present (expected in this checkout)', false);
+  }
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

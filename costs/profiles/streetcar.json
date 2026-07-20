@@ -1,0 +1,129 @@
+{
+  "schema": "corridor-cost-profile-1",
+  "corridor": "streetcar",
+  "title": "OC Streetcar at-grade (SARTC → Harbor/Westminster), PE-ROW alignment",
+  "_about": "Corridor cost profile for the v3 pipeline BCA (spec 2026-07-14 §2.3) — the FIRST no-ABC corridor (the streetcar export ships no abc_weights until post-launch; spec 06 §1/§7 degrade convention: uncapped-only, abc cells absent, abc_absent_reason populated from the export). Prices come from oc spec-04-as-code (oc scripts/capcost.py) applied as the HONEST AT-GRADE SUBSET — see capital._derivation for the loud gap flag. Quantities come from the ridership-model export (oc outputs/bca_export_streetcar.json.gz).",
+
+  "design": {
+    "_note": "oc config/streetcar.json + config/candidates.json: at-grade streetcar on the PE-ROW alignment, single-car consist, 0.42-mi stop spacing, exogenous at-grade speed 11.3 mph (services block; NOT the grade-separated ALM derived speed — that would be a category error for street-running). route_mi 4.0 = the corridor_waypoints polyline length (4.009 mi haversine; candidates.json/N5 basis); OCTA's own project figure is 4.15 mi — the 3.6% delta is alignment-source, not a design choice.",
+    "route_mi": 4.0,
+    "route_km": 6.437,
+    "_route_km_note": "4.0 mi × 1.609344 = 6.437 km.",
+    "stations": 10,
+    "_stations_note": "0.42-mi spacing (config service_new.spacing) over 4.0 mi → 4.0/0.42 + 1 ≈ 10.5; resolved DOWN to 10 by the config's own note ('~10 stops ... per OCTA project docs', service_new.note) — the spacing is itself derived from that stop count, so 10 is the anchored value.",
+    "cars_per_train": 1,
+    "fleet_cars": 6,
+    "_fleet_note": "oc scripts/capcost.py fleet(4.0, headway_peak=10, cars_per_train=1, v_avg_mph=11.3): cycle_time = 2·4.0/11.3·(1+0.15)·60 = 48.85 min (config cross-check: '~22 min end-to-end' one-way ≈ 44 min round trip + layover); ceil(48.85/10) = 5 trainsets at the 10-min peak headway (config service_new.headway.peak); cars = ceil(5·1·1.12) = 6. Single-car consist: at-grade modern-streetcar operation (spec 05 §3 mode), no coupling policy. v_avg is the config's exogenous at-grade 11.3 mph, NOT capcost's derived_v_avg_mph default (grade-separated ALM physics — wrong mode here; same category-error guard as oc sequence_network.py's REM check). layover 0.15 / spare 0.12 are capcost defaults, same as harbor's derivation."
+  },
+
+  "capital": {
+    "_derivation": "HONEST AT-GRADE SUBSET of the spec 04 rate card (oc scripts/capcost.py, E55-anchored constants) — capcost prices ONE mode (elevated ALM; its docstring: 'A corridor with an at-grade split would need an elevated_mi extension — out of scope for N2'). No at-grade/streetcar rate card exists in spec 04, so this profile prices the streetcar with capcost's own coefficients MINUS the one line the rate card itself marks elevated-only (spec 04 §2 '(+ elevated add-on)'): Total = markup × [Fixed(OCC 28 + depot 125) + 19.5·route_km + station_rate·delivery·stations + 6.2·cars + crossings×rate], i.e. capital(4.0, 10, 6, band, crossings=1) − markup·delivery·23·route_km. Computed against capcost directly (subset == manual rebuild to the cent). crossings=1 = the Santa Ana River channel bridge, candidates.json's N5-review provenance note (I-5 / SR-22 / BNSF all excluded there by geometry — read it before editing this count). GAP FLAGGED LOUDLY: the surviving coefficients are still ALM-calibrated — station 28.3 $M is the ELEVATED LEAN station (an at-grade streetcar stop is an order of magnitude cheaper), car 6.2 $M is a metro car (a modern streetcar vehicle is comparable, ~$5-6M), 19.5 $M/km bundles metro-grade track/traction/CBTC/utilities, and the fixed 153 $M OCC+depot is metro-scale. The subset therefore likely OVERSTATES at-grade streetcar capital, dominated by the station line — this is the honest price under the rate card we have, not an invented streetcar rate card. Harbor's §3.3b dense-segment street/utility US-TYPICAL adders are NOT applied (capcost does not expose them; documented residual, capcost test_harbor_bands_vs_tbc). Both K in $B (engine params.K units: cost_$M = K·share·1000).",
+    "low": {
+      "K": 0.754,
+      "total_musd": 754,
+      "usd_per_km": 117.2,
+      "_breakdown": "markup 1.20 (additive 1+0.10+0.10, E55-anchored), delivery 1.0, crossing 30: [153 fixed + 19.5×6.437 = 125.53 + 28.3×10 = 283.0 + 6.2×6 = 37.2 + 1×30] = 628.73 × 1.20 = 754.47, rounded 754. $/km 117.2 — inside the sheet's 100-125 $M/km ELEVATED sanity band, which for a fully AT-GRADE line is itself the loudest form of the ALM-coefficient gap flag above (a real streetcar builds for ~$60-120M/mi ≈ 37-75 $M/km; OCTA's actual project is ~$649M over 4.15 mi ≈ 97 $M/km after its own overruns)."
+    },
+    "us_typical": {
+      "K": 1.220,
+      "total_musd": 1220,
+      "usd_per_km": 189.5,
+      "_breakdown": "markup 1.3923 (soft 1.17 × contingency 1.19, spec 04 §3.2), delivery 1.75 on stations (viaduct line already excluded), crossing 65: [153 + 125.53 + 28.3×1.75×10 = 495.25 + 37.2 + 65] = 875.98 × 1.3923 = 1219.63, rounded 1220.",
+      "_provenance_note": "delivery-environment 1.75× retained on the station line per capcost's band structure even though the stations are the most ALM-overstated item at-grade — dropping it selectively would be an invented coefficient; the LOW band is the honest floor of this profile."
+    }
+  },
+
+  "assets": [
+    { "share": 0.55, "life": 80 },
+    { "share": 0.25, "life": 30 },
+    { "share": 0.15, "life": 30 },
+    { "share": 0.05, "life": 12 }
+  ],
+  "_assets_note": "engine DEFAULT_ASSETS split (civil / track+systems / rolling stock / fare+IT), mirrored from harbor. In-service semantics: capexSchedulePipeline spreads the initial build over build_years and measures renewals + residual from each class's in-service date (spec §5).",
+
+  "build_years": 5,
+  "_build_years_note": "spec §5 default 5, mirrored from harbor (rows at 4 / 7). OCTA's actual streetcar build ran ~2018-2025 with stops; no config value dictates otherwise.",
+
+  "service_plan": {
+    "_note": "E5 car-km design inputs (spec §7). Headways from oc config/streetcar.json service_new.headway (10 peak / 15 offpeak); single-car consist; period hours (6 peak + 13 offpeak) mirror harbor's service-day structure — the config carries no span. car_km_yr = eq_days · Σ 2·route_km·(60/headway)·hours·cars_per_train; central eq_days 300 → ≈ 0.34M car-km/yr (peak 463.5 + offpeak 669.5 = 1133.0 car-km/weekday).",
+    "route_km": 6.437,
+    "cars_per_train": 1,
+    "periods": [
+      { "period": "peak", "headway": 10.0, "hours": 6.0 },
+      { "period": "offpeak", "headway": 15.0, "hours": 13.0 }
+    ]
+  },
+
+  "om": {
+    "_note": "MIRRORED from harbor's GoA4 automated-metro benchmark bands (spec §7) — FLAGGED: the streetcar is DRIVER-OPERATED, so the GoA4 anchor set (SkyTrain/Copenhagen/NTD automated metro) does not describe it; a streetcar carries an operator per vehicle (higher $/car-km) but nothing like a metro OCC/depot fixed base (lower fixed). No streetcar O&M band exists in the oc registry to cite, so the harbor bands are carried unmodified rather than invented: goaOM(t) = om_fixed_yr + om_var_per_car_km·car_km_yr. At central: 30M + 4.5×0.34M ≈ 31.5M/yr — roughly 2× OCTA's own streetcar O&M estimate (~$13-16M/yr), dominated by the metro-scale fixed term; the om_lo endpoint (15M + 3.0 ≈ 16.0M/yr) brackets the realistic point. Read the om_lo/om_hi tornado rows as carrying this mode gap, not just benchmark width.",
+    "fixed_yr": { "central": 30000000, "lo": 15000000, "hi": 55000000 },
+    "var_per_car_km": { "central": 4.5, "lo": 3.0, "hi": 8.0 }
+  },
+
+  "traction_gco2_per_km": {
+    "central": 55,
+    "_note": "Same SCE grid as harbor (D8 traction-power carbon debit central = corridor grid rate); engine RANGES clamp [0,60] binds identically. Immaterial to the headline at 0.34M car-km/yr (≈ $0.9k/yr at SCC 50 vs $0.75-1.2B capex)."
+  },
+
+  "avoidable_rate": {
+    "central": 120,
+    "marginal": 70,
+    "_note": "$/rev-hr, mirrored from harbor (spec §6 marginal → fully-allocated band). INERT for this corridor: routes_removed is empty for both scenarios (config bca block — the composite parallel locals 60/64/560/150 keep running; no single route folds), so baseOMAvoidedYr = 0 and the avoidable_marginal row is a strict no-op here. Kept for schema completeness and the wrapper's params contract."
+  },
+
+  "avg_fare": {
+    "central": 1.20,
+    "lo": 0.90,
+    "hi": 1.60,
+    "_note": "Effective system revenue per boarding, transfer/pass-discounted — same OCTA fare system as harbor (base $2.00 × ~0.45-0.80 effective), mirrored. fareRevDay = avg_fare·(total − base_boardings), net-new boardings only (D3)."
+  },
+
+  "base_boardings": 4550,
+  "_base_boardings_note": "Existing corridor weekday boardings the new line captures (already paying the flat fare; only NET-NEW boardings add system revenue — D3). Anchor central: config anchor_low/high 3600/5500 → midpoint 4550 — same derivation idiom as harbor's 8650. Caveat inherited from the config's anchor_note: this anchor is MEASURED but WEAK (composite of partial parallel overlaps, spec 05 §3.3), so the captured-base identity is softer than harbor's co-located 43/543 pair.",
+
+  "seat_capacity": {
+    "consist_seats": 70,
+    "peak_trains_per_hour": 6,
+    "seatCap": 420,
+    "_note": "loadFlag denominator is peak-HOUR seated capacity in the peak direction (seats/hr): 1 modern-streetcar vehicle ≈ 70 seats (S700-class, JUDGMENT — no oc registry value; total crush capacity ~2.5× seated) × 6 trains/hr (10-min peak headway) = 420 seats/hr. Central load ≈ R0·0.17·0.60/420 — at the ~4-5k forecast this EXCEEDS 1.0, so expect loadFlag to fire and the crowding_haircut row to bite (unlike harbor's 0.32): a single-car 10-min streetcar is genuinely capacity-tight against seated comfort at peak. Honest diagnostic, not an error (D4)."
+  },
+
+  "peak_hour_share": 0.17,
+  "peak_direction_share": 0.60,
+  "_peak_note": "D4 BCA-owned peak-HOUR share (0.17) × peak-direction 0.60, mirrored from harbor — NOT the export's stage-2 period pkshare U(0.45,0.60) (spec §3).",
+
+  "prior_bands": {
+    "_note": "INTERIM (spec §2, until oc 08-A3.3): (lo,hi,shape) endpoints for the five priors the wrapper RE-PRICES. County-common posterior bands (oc model.PRIORS) — identical to harbor's by construction, NOT a corridor choice. TODO: migrate to assumptions.json 08-A3.3 machine values section.",
+    "vot_behav": { "lo": 10.0, "hi": 22.0, "shape": "tri" },
+    "pcar0": { "lo": 0.05, "hi": 0.25, "shape": "uniform" },
+    "pcar1": { "lo": 0.35, "hi": 0.65, "shape": "uniform" },
+    "pcar2": { "lo": 0.55, "hi": 0.85, "shape": "uniform" },
+    "pcarv": { "lo": 0.0, "hi": 0.30, "shape": "uniform" }
+  },
+
+  "_no_abc_note": "NO central_kernel and NO abc_rows in this profile — the standalone streetcar export ships no abc_weights (no calibration target until post-launch, spec 05; spec 06 §1/§7 degrade convention). The wrapper degrades to uncapped-only: abc cells absent, abc_absent_reason populated from the export, tornado computed on the uncapped weighting, abc_s350/abc_s800 rows carried as 'kernel unavailable'. Post-launch (abc_streetcar.json exists and the export re-ships weights), add central_kernel + abc_rows here following harbor's G-E5 idiom.",
+
+  "central_profile": {
+    "_note": "The named central profile (spec §3, spec 06 presentation principle), mirrored from harbor — the pricing side is county-common by design. λ=1, γ=0, SCC=$50, mohring=0, labor=0 (explicit — NOT left to V2_DEFAULTS; G-E3), rebound=0.4, carbon_growth=0, VOT=$22.50, discount 4% flat, ramp_start 0.8, ramp_years 5, growth 0, horizon 60. eq_days is read from the EXPORT (central = min of its (300,330) band), NOT from here.",
+    "horizon": 60,
+    "discount_rate": 0.04,
+    "declining_rate": false,
+    "VOT": 22.5,
+    "gamma": 0,
+    "mohring_coef": 0,
+    "labor_coef": 0,
+    "lambda": 1,
+    "scc": 50,
+    "rebound": 0.4,
+    "_rebound_note": "Central 0.4 (external review 2026-07-17 + Duranton & Turner induced-refill evidence), rows at 0 and 0.8 — same convention as harbor.",
+    "carbon_growth": 0,
+    "growth": 0,
+    "ramp_start": 0.8,
+    "ramp_years": 5,
+    "gco2_per_mi": 350,
+    "c_cong": 0.20,
+    "c_acc": 0.03,
+    "c_emis_local": 0.0085,
+    "_ext_note": "c_cong/c_acc/c_emis_local centrals match the engine pipeline defaults and the endogenous CONST (0.20 / 0.03 / 0.0085, D8). Swept by ext_cong/acc/local rows."
+  }
+}

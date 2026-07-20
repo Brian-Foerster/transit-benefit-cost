@@ -415,10 +415,15 @@ function rowStreams(rowId, raw, profile, ctxBlend) {
 // Evaluate the full tornado for one cell (scenario, band, ABC central kernel).
 // eqDaysHi (export band far edge) drives the eq_days_330 row; profile.abc_rows
 // maps the σ-sensitivity row ids to their export kernel labels (both G-E5).
+// weights === null => the no-ABC degrade (spec 06 §1/§7): the tornado runs on
+// the UNCAPPED weighting (numpy-linear P50, same convention as the uncapped
+// headline cells) and the cell is labeled weighting:'uncapped', kernel:null.
 function computeTornado({ TBCR }, profile, exp, scenario, central, centralCoeffs, centralStreams, raw, ctxBlend, weights, n, eqDaysHi) {
   const npv = new Float64Array(n), bcr = new Float64Array(n);
-  const total = weights.reduce((s, w) => s + w, 0);
-  const p50 = (arr) => { const idx = argsort(arr); return wpctInterp(arr, weights, 50, idx, total); };
+  const total = weights ? weights.reduce((s, w) => s + w, 0) : n;
+  const p50 = weights
+    ? (arr) => { const idx = argsort(arr); return wpctInterp(arr, weights, 50, idx, total); }
+    : (arr) => pctLinear(Float64Array.from(arr).sort(), 50);
   const centralP50 = p50(centralStreams._npvRef);
   const rows = {};
 
@@ -451,15 +456,14 @@ function computeTornado({ TBCR }, profile, exp, scenario, central, centralCoeffs
     if (id === 'vot_wedge') {
       // the row reports BCR too (its point is the BCR under behavioral VOT); npv/bcr
       // still hold this row's reconstruct output here.
-      const idxB = argsort(bcr);
-      rows[id].bcr_p50 = wpctInterp(bcr, weights, 50, idxB, total);
+      rows[id].bcr_p50 = p50(bcr);
       rows[id].note = 'ALL VOT-priced minute streams re-priced at the draw-level exported behavioral VOT (vot_behav) instead of the social-VOT draw; money streams (fareRevDay, fare_burden/fare_receipts) NOT re-priced — money stays money-metric (D3/A4). Headline unchanged.';
     }
   }
   const abcRows = profile.abc_rows || {};
   for (const id of WEIGHT_ROW_IDS) {
     const kernel = abcRows[id];
-    if (!kernel || !exp.abc_weights[kernel]) { rows[id] = { label: id, npv_p50: centralP50, delta_npv_p50: 0, note: 'kernel unavailable in export' }; continue; }
+    if (!kernel || !exp.abc_weights || !exp.abc_weights[kernel]) { rows[id] = { label: id, npv_p50: centralP50, delta_npv_p50: 0, note: 'kernel unavailable in export' }; continue; }
     const w = exp.abc_weights[kernel];
     const idx = argsort(centralStreams._npvRef);
     const tot = w.reduce((s, x) => s + x, 0);
@@ -469,7 +473,12 @@ function computeTornado({ TBCR }, profile, exp, scenario, central, centralCoeffs
   for (const [id, note] of Object.entries(NOTE_ROWS)) {
     rows[id] = { label: id, npv_p50: centralP50, delta_npv_p50: 0, note };
   }
-  return { cell: { scenario, band: 'US_TYPICAL', weighting: 'abc', kernel: profile.central_kernel }, central_npv_p50: centralP50, rows, blocked: BLOCKED };
+  return {
+    cell: weights
+      ? { scenario, band: 'US_TYPICAL', weighting: 'abc', kernel: profile.central_kernel }
+      : { scenario, band: 'US_TYPICAL', weighting: 'uncapped', kernel: null },
+    central_npv_p50: centralP50, rows, blocked: BLOCKED,
+  };
 }
 
 // NETWORKED MODE (spec 07 N5): a harness-built candidate-given-network export
@@ -497,13 +506,21 @@ function applyCostDesign(profile, exp) {
 // MAIN PIPELINE
 // =============================================================================
 export function runPipeline(opts = {}) {
-  const corridor = opts.corridor || 'harbor';
   const engine = opts.engine || loadEngine(opts.htmlPath);
   const { TBCR } = engine;
-  const exportPath = opts.exportPath || join(HERE, '..', 'oc-transit-forecast', 'outputs', `bca_export_${corridor}.json.gz`);
-  const profilePath = opts.profilePath || join(HERE, 'costs', 'profiles', `${corridor}.json`);
+  const exportPath = opts.exportPath || join(HERE, '..', 'oc-transit-forecast', 'outputs', `bca_export_${opts.corridor || 'harbor'}.json.gz`);
 
   const exp = JSON.parse(gunzipSync(readFileSync(exportPath)).toString('utf8'));
+  // Corridor resolves from the EXPORT when the caller passes none (no-ABC-path
+  // fix 2026-07-19: `node bca-pipeline.mjs --export <streetcar gz> ...` used to
+  // default the label to 'harbor' and silently ship streetcar quantities under
+  // the wrong corridor name). A caller-supplied corridor that CONTRADICTS the
+  // export's own declaration is a hard error, not a silent mislabel.
+  const corridor = opts.corridor || exp.corridor || 'harbor';
+  if (opts.corridor && exp.corridor && exp.corridor !== opts.corridor) {
+    throw new Error(`corridor mismatch: wrapper invoked for '${opts.corridor}' but the export declares corridor '${exp.corridor}' (${exportPath}) — refusing to ship one corridor's quantities under another's label`);
+  }
+  const profilePath = opts.profilePath || join(HERE, 'costs', 'profiles', `${corridor}.json`);
   const profile = applyCostDesign(JSON.parse(readFileSync(profilePath, 'utf8')), exp);
 
   const n = exp.n;
@@ -512,7 +529,9 @@ export function runPipeline(opts = {}) {
   const eqDaysCentral = eqDaysBand[0];
   const hasAbc = !!exp.abc_weights;
   const kernelLabels = hasAbc ? Object.keys(exp.abc_weights).sort() : [];
-  const centralKernel = profile.central_kernel;
+  // no-ABC-path fix 2026-07-19: a no-ABC profile carries no central_kernel;
+  // `undefined` used to reach stableStringify and throw (Object.keys(undefined)).
+  const centralKernel = profile.central_kernel ?? null;
   if (hasAbc && !exp.abc_weights[centralKernel]) throw new Error('central kernel ' + centralKernel + ' not in export abc_weights');
   const abcAbsentReason = hasAbc ? null : (exp.abc_weights_absent_reason || 'no abc_weights in export');
 
@@ -565,18 +584,18 @@ export function runPipeline(opts = {}) {
     centralCoeffsCache[scen] = extractCoeffs(TBCR, centralUS);
   }
 
-  // ---- tornado (per scenario, US_TYPICAL, ABC central kernel) --------------
+  // ---- tornado (per scenario, US_TYPICAL, ABC central kernel; no-ABC exports
+  // degrade to the uncapped weighting — spec 06 §1/§7, weights=null) ----------
   const tornado = {};
-  if (hasAbc) {
-    for (const scen of scenarios) {
-      const central = centralParamsCache[scen + '|US_TYPICAL'];
-      const C = centralCoeffsCache[scen];
-      const streams = centralStreamsByScen[scen];
-      const npvRef = new Float64Array(n), bcrRef = new Float64Array(n);
-      reconstruct(C, streams, n, npvRef, bcrRef);
-      const streamsWithRef = { ...streams, _npvRef: npvRef };
-      tornado[scen] = computeTornado(engine, profile, exp, scen, central, C, streamsWithRef, rawByScen[scen], blendByScen[scen], exp.abc_weights[centralKernel], n, eqDaysBand[1]);
-    }
+  for (const scen of scenarios) {
+    const central = centralParamsCache[scen + '|US_TYPICAL'];
+    const C = centralCoeffsCache[scen];
+    const streams = centralStreamsByScen[scen];
+    const npvRef = new Float64Array(n), bcrRef = new Float64Array(n);
+    reconstruct(C, streams, n, npvRef, bcrRef);
+    const streamsWithRef = { ...streams, _npvRef: npvRef };
+    const weights = hasAbc ? exp.abc_weights[centralKernel] : null;
+    tornado[scen] = computeTornado(engine, profile, exp, scen, central, C, streamsWithRef, rawByScen[scen], blendByScen[scen], weights, n, eqDaysBand[1]);
   }
 
   // ---- diagnostics --------------------------------------------------------
@@ -610,7 +629,7 @@ export function runPipeline(opts = {}) {
     ...networkKeys,
     eq_days: { band: eqDaysBand, central: eqDaysCentral, source: 'export' },
     central_kernel: centralKernel,
-    central_kernel_source: 'cost-profile (interim; oc 08-A3.3 central flag pending)',
+    central_kernel_source: centralKernel != null ? 'cost-profile (interim; oc 08-A3.3 central flag pending)' : null,
     kernel_labels: kernelLabels,
     cost_bands: bands.map((b) => b[0]),
     scenarios,
@@ -763,11 +782,15 @@ function parseArgs(argv) {
 }
 function main(argv) {
   const a = parseArgs(argv);
-  const corridor = a.positional[0] || 'harbor';
+  // corridor may be omitted when --export is given — it then resolves from the
+  // export's own `corridor` field inside runPipeline (no-ABC-path fix
+  // 2026-07-19; the old `|| 'harbor'` default silently mislabeled the artifact).
+  const corridorArg = a.positional[0] || (a.exportPath ? undefined : 'harbor');
   // back-compat: a bare second positional is still the export path (old form)
   const exportPath = a.exportPath || a.positional[1];
   const t0 = process.hrtime.bigint();
-  const { artifact, n, scenarios, perDraw } = runPipeline({ corridor, exportPath, profilePath: a.profilePath });
+  const { artifact, n, scenarios, perDraw } = runPipeline({ corridor: corridorArg, exportPath, profilePath: a.profilePath });
+  const corridor = artifact.corridor;
   const t1 = process.hrtime.bigint();
   const runtimeMs = Number(t1 - t0) / 1e6;
   const outDir = join(HERE, 'outputs');
